@@ -40,7 +40,8 @@ jobs:
           username: ${{ github.actor }}
           # Use a personal access token with `write:packages` (and `read:packages`) scopes
           # Create a PAT and add it to repository secrets as `PERSONAL_ACCESS_TOKEN`.
-          password: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          password: ${{ secrets.GHCI_ACCESS_TOKEN }}
+          # password: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
