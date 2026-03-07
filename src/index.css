@@ -76,3 +76,52 @@ body {
 .map-theme-control:hover {
   background: var(--border);
 }
+
+/* Layout helpers for responsive behavior */
+.main-content {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.map-wrapper {
+  flex: 1;
+  position: relative;
+}
+
+/* Sidebar (distance panel) */
+.distance-panel {
+  width: 320px;
+  min-width: 280px;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  padding: 16px;
+  overflow-y: auto;
+}
+
+/* Mobile: stack map and panel vertically */
+@media (max-width: 720px) {
+  .main-content {
+    flex-direction: column;
+  }
+  .map-wrapper {
+    order: 1;
+    height: 50vh;
+  }
+  .distance-panel {
+    order: 2;
+    width: 100%;
+    min-width: 0;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    max-height: 50vh;
+    overflow-y: auto;
+    padding: 12px;
+  }
+  header {
+    padding: 10px 12px;
+  }
+  .map-theme-control {
+    padding: 8px 10px;
+    font-size: 0.9rem;
+  }
+}

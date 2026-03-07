@@ -70,16 +70,7 @@ export function DistancePanel({
       : people;
 
   return (
-    <aside
-      style={{
-        width: '320px',
-        minWidth: '280px',
-        background: 'var(--surface)',
-        borderLeft: '1px solid var(--border)',
-        padding: '16px',
-        overflowY: 'auto',
-      }}
-    >
+    <aside className="distance-panel">
       <h2 style={{ margin: '0 0 8px', fontSize: '0.9rem', fontWeight: 600, color: 'var(--muted)' }}>
         Favourite meeting places
       </h2>

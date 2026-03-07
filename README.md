@@ -66,6 +66,21 @@ Optional environment variables:
 - `PORT` – port to listen on (default `3000`)
 - `OSRM_URL` – custom OSRM server (default: public `https://router.project-osrm.org`)
 
+## Troubleshooting 502 errors
+
+If you see "Routing failed" or 502 errors when calculating distances:
+
+1. **Check container logs** – The server logs OSRM errors. In Portainer: Container → Logs. Look for `[OSRM table]` or `[OSRM route]` lines.
+2. **Network egress** – The container must reach the OSRM URL over HTTPS. If your host blocks outbound traffic, routing will fail.
+3. **Region coverage** – The public OSRM server (`router.project-osrm.org`) may not cover all regions well (e.g. some areas return `NoRoute`). For better coverage, run your own OSRM instance and set `OSRM_URL` to it.
+4. **Rate limits** – The public server may throttle requests. Self-hosting OSRM avoids this.
+
+Example with a custom OSRM server:
+
+```bash
+docker run -d -p 3000:3000 -e OSRM_URL=https://your-osrm-server.com distance-calculator
+```
+
 ## How to use
 
 1. Click **Add person**, then click on the map to place each person. You can rename them in the side panel.

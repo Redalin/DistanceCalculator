@@ -26,13 +26,15 @@ app.get('/api/table', async (req, res) => {
   const destinations = String(points.length - 1);
   const url = `${OSRM_BASE}/table/v1/driving/${coordsParam}?sources=${sources}&destinations=${destinations}&annotations=duration,distance`;
   try {
-    const r = await fetch(url);
+    const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
     const data = await r.json();
     if (data.code !== 'Ok') {
-      return res.status(502).json({ error: data.message || 'OSRM error' });
+      console.error('[OSRM table]', data.code, data.message || '', 'coords:', coordsParam.slice(0, 80) + '...');
+      return res.status(502).json({ error: data.message || data.code || 'OSRM error' });
     }
     res.json(data);
   } catch (err) {
+    console.error('[OSRM table]', err.message || err, 'url:', url.slice(0, 100) + '...');
     res.status(502).json({ error: err.message || 'Routing service unavailable' });
   }
 });
@@ -46,13 +48,15 @@ app.get('/api/route', async (req, res) => {
   }
   const url = `${OSRM_BASE}/route/v1/driving/${coords}?overview=full&geometries=geojson`;
   try {
-    const r = await fetch(url);
+    const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
     const data = await r.json();
     if (data.code !== 'Ok') {
-      return res.status(502).json({ error: data.message || 'OSRM error' });
+      console.error('[OSRM route]', data.code, data.message || '', 'coords:', coords.slice(0, 60) + '...');
+      return res.status(502).json({ error: data.message || data.code || 'OSRM error' });
     }
     res.json(data);
   } catch (err) {
+    console.error('[OSRM route]', err.message || err, 'url:', url.slice(0, 100) + '...');
     res.status(502).json({ error: err.message || 'Routing service unavailable' });
   }
 });
@@ -65,4 +69,5 @@ app.get('*', (_, res) => res.sendFile(join(dist, 'index.html')));
 const PORT = Number(process.env.PORT) || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server listening on http://0.0.0.0:${PORT}`);
+  console.log(`OSRM backend: ${OSRM_BASE}`);
 });

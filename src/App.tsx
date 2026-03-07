@@ -373,8 +373,8 @@ export default function App() {
         </div>
       </header>
 
-      <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-        <div style={{ flex: 1, position: 'relative' }}>
+      <div className="main-content">
+        <div className="map-wrapper">
           <MapContainer
             center={[51.505, -0.09]}
             zoom={10}
