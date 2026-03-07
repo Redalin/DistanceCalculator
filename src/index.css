@@ -92,10 +92,16 @@ body {
 .distance-panel {
   width: 320px;
   min-width: 280px;
+  max-width: 720px;
   background: var(--surface);
   border-left: 1px solid var(--border);
   padding: 16px;
   overflow-y: auto;
+  position: relative;
+}
+
+.resize-handle:hover {
+  background: var(--border);
 }
 
 /* Mobile: stack map and panel vertically */
@@ -126,6 +132,40 @@ body {
   }
 }
 
+/* Mobile drag handle for vertical resize */
+.distance-panel.mobile {
+  position: relative;
+  display: block;
+  overflow: auto;
+}
+.distance-panel .drag-handle {
+  height: 10px;
+  width: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.02), transparent);
+  cursor: ns-resize;
+  display: block;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+  margin-bottom: 6px;
+}
+.distance-panel.dragging .drag-handle,
+.distance-panel.resizing .drag-handle {
+  background: linear-gradient(90deg, transparent, rgba(88,166,255,0.12), transparent);
+}
+
+/* panel toggle buttons */
+.panel-toggle,
+.panel-toggle-top {
+  padding: 6px 8px;
+  font-size: 0.8rem;
+}
+
+/* ensure mobile panel fills width */
+.distance-panel.mobile {
+  width: 100% !important;
+  left: 0;
+}
+
 /* Controls in People & distances */
 .people-controls {
   display: flex;
@@ -140,7 +180,7 @@ body {
 
 @media (max-width: 720px) {
   .distance-panel {
-    padding: 10px;
+    padding: 1px;
   }
   .mode-btn,
   .clear-btn {

@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, useMapEvents, useMap, Marker, Polyline, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import { DistancePanel } from './DistancePanel';
+import { DistanceSummary } from './DistanceSummary';
 import {
   loadSession,
   saveSession,
@@ -155,6 +156,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [routeGeometries, setRouteGeometries] = useState<[number, number][][]>([]);
   const [favourites, setFavourites] = useState<StoredFavourite[]>(() => loadFavourites());
+  const [showPanel, setShowPanel] = useState(true);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -337,6 +339,14 @@ export default function App() {
           <button
             type="button"
             className="mode-btn"
+            onClick={() => setShowPanel((s) => !s)}
+            title="Show or hide the info panel"
+          >
+            {showPanel ? 'Hide panel' : 'Show panel'}
+          </button>
+          <button
+            type="button"
+            className="mode-btn"
             data-active={mode === 'person'}
             onClick={() => setMode(mode === 'person' ? null : 'person')}
           >
@@ -387,6 +397,7 @@ export default function App() {
               people={people}
               meetingPoint={meetingPoint}
             />
+            <DistanceSummary routes={routes} meetingPoint={meetingPoint} />
             <MapClickHandler onAddPerson={addPerson} onSetMeeting={setMeeting} mode={mode} />
             {people.map((p) => (
               <Marker
@@ -457,6 +468,8 @@ export default function App() {
           onRemoveFavourite={removeFavourite}
           onSetMeetingFromFavourite={setMeetingFromFavourite}
           onClearAllPeople={clearAllPeople}
+          showPanel={showPanel}
+          onTogglePanel={() => setShowPanel((s) => !s)}
         />
       </div>
     </div>
