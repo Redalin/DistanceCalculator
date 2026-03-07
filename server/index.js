@@ -24,25 +24,16 @@ async function fetchPreferIPv4Json(rawUrl, timeoutMs = 15000) {
   } catch (e) {
     // ignore and fall back to system resolver
   }
-
-  // If no IPv4, use system resolver by passing undefined to lookup
-  const lookupFn = (hostname, options, callback) => {
-    if (addresses.length > 0) {
-      // return the first IPv4 address
-      return process.nextTick(() => callback(null, addresses[0], 4));
-    }
-    // default lookup
-    return dns.lookup(hostname, options, callback);
-  };
+  // Prefer the first IPv4 address if available; otherwise use the hostname.
+  const ip = addresses.length > 0 ? addresses[0] : null;
 
   return new Promise((resolve, reject) => {
     const req = https.request(
       {
-        hostname: host,
+        hostname: ip || host,
         path: u.pathname + u.search,
         method: 'GET',
-        headers: { Host: host, ...(u.username ? { Authorization: `Basic ${u.username}:${u.password}` } : {}) },
-        lookup: lookupFn,
+        headers: { Host: host },
         servername: host,
         timeout: timeoutMs,
       },
