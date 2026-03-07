@@ -17,6 +17,9 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install --omit=dev
 
+# Ensure CA certificates are present so Node can make HTTPS requests (OSRM)
+RUN apk add --no-cache ca-certificates && update-ca-certificates || true
+
 COPY --from=builder /app/dist ./dist
 COPY server ./server
 
