@@ -2,6 +2,7 @@ import express from 'express';
 import dns from 'dns';
 import { URL } from 'url';
 import https from 'https';
+import net from 'net';
 
 const dnsPromises = dns.promises;
 
@@ -58,6 +59,53 @@ async function fetchPreferIPv4Json(rawUrl, timeoutMs = 15000) {
     req.end();
   });
 }
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function fetchWithRetry(url, retries = 2, baseDelay = 300) {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await fetchPreferIPv4Json(url, 15000);
+    } catch (err) {
+      if (attempt >= retries) throw err;
+      const delay = baseDelay * Math.pow(2, attempt);
+      await sleep(delay);
+      attempt++;
+    }
+  }
+}
+
+async function checkOsrmReachable(timeoutMs = 3000) {
+  try {
+    const u = new URL(OSRM_BASE);
+    const host = u.hostname;
+    // resolve IPv4 if possible
+    let addr;
+    try {
+      const r = await dnsPromises.lookup(host, { family: 4 });
+      addr = r.address;
+    } catch (e) {
+      addr = host;
+    }
+
+    return await new Promise((resolve) => {
+      const socket = net.createConnection({ host: addr, port: 443, timeout: timeoutMs }, () => {
+        socket.end();
+        resolve(true);
+      });
+      socket.on('error', () => resolve(false));
+      socket.on('timeout', () => {
+        socket.destroy();
+        resolve(false);
+      });
+    });
+  } catch (e) {
+    return false;
+  }
+}
 import cors from 'cors';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -74,6 +122,12 @@ try {
 
 const app = express();
 app.use(cors());
+
+// Health check
+app.get('/health', async (_, res) => {
+  const osrm = await checkOsrmReachable();
+  res.json({ ok: true, osrm });
+});
 
 // API: get driving distance/duration matrix from OSRM
 // GET /api/table?coords=lon1,lat1;lon2,lat2;lon3,lat3
@@ -92,7 +146,7 @@ app.get('/api/table', async (req, res) => {
   const destinations = String(points.length - 1);
   const url = `${OSRM_BASE}/table/v1/driving/${coordsParam}?sources=${sources}&destinations=${destinations}&annotations=duration,distance`;
   try {
-    const data = await fetchPreferIPv4Json(url, 15000);
+    const data = await fetchWithRetry(url);
     if (data.code !== 'Ok') {
       console.error('[OSRM table]', data.code, data.message || '', 'coords:', coordsParam.slice(0, 80) + '...');
       return res.status(502).json({ error: data.message || data.code || 'OSRM error' });
@@ -113,7 +167,7 @@ app.get('/api/route', async (req, res) => {
   }
   const url = `${OSRM_BASE}/route/v1/driving/${coords}?overview=full&geometries=geojson`;
   try {
-    const data = await fetchPreferIPv4Json(url, 15000);
+    const data = await fetchWithRetry(url);
     if (data.code !== 'Ok') {
       console.error('[OSRM route]', data.code, data.message || '', 'coords:', coords.slice(0, 60) + '...');
       return res.status(502).json({ error: data.message || data.code || 'OSRM error' });
