@@ -365,11 +365,7 @@ export default function App() {
               Clear meeting point
             </button>
           )}
-          {people.length > 0 && (
-            <button type="button" className="mode-btn" onClick={clearAllPeople}>
-              Clear all people
-            </button>
-          )}
+          {/* "Clear all people" moved into the People & distances panel for better mobile layout */}
         </div>
       </header>
 
@@ -460,6 +456,7 @@ export default function App() {
           onAddFavourite={addFavourite}
           onRemoveFavourite={removeFavourite}
           onSetMeetingFromFavourite={setMeetingFromFavourite}
+          onClearAllPeople={clearAllPeople}
         />
       </div>
     </div>

@@ -125,3 +125,26 @@ body {
     font-size: 0.9rem;
   }
 }
+
+/* Controls in People & distances */
+.people-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.clear-btn {
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .distance-panel {
+    padding: 10px;
+  }
+  .mode-btn,
+  .clear-btn {
+    padding: 6px 8px;
+    font-size: 0.85rem;
+  }
+}

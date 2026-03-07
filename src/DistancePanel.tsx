@@ -33,6 +33,7 @@ export function DistancePanel({
   onAddFavourite,
   onRemoveFavourite,
   onSetMeetingFromFavourite,
+  onClearAllPeople,
 }: {
   people: Person[];
   routes: RouteEntry[];
@@ -43,6 +44,7 @@ export function DistancePanel({
   onAddFavourite: (name: string) => void;
   onRemoveFavourite: (id: string) => void;
   onSetMeetingFromFavourite: (position: LatLng) => void;
+  onClearAllPeople?: () => void;
 }) {
   const [sortByDistance, setSortByDistance] = useState(false);
 
@@ -153,24 +155,36 @@ export function DistancePanel({
       <h2 style={{ margin: '0 0 12px', fontSize: '1rem', fontWeight: 600 }}>
         People & distances
       </h2>
-      {routes.length > 0 && (
-        <button
-          type="button"
-          onClick={() => setSortByDistance((s) => !s)}
-          style={{
-            marginBottom: '12px',
-            padding: '6px 12px',
-            fontSize: '0.85rem',
-            borderRadius: '6px',
-            border: '1px solid var(--border)',
-            background: sortByDistance ? 'var(--accent-dim)' : 'var(--bg)',
-            color: sortByDistance ? 'var(--accent)' : 'var(--text)',
-            cursor: 'pointer',
-          }}
-        >
-          {sortByDistance ? 'Show original order' : 'Rank by distance'}
-        </button>
-      )}
+      <div className="people-controls" style={{ marginBottom: '12px' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {routes.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setSortByDistance((s) => !s)}
+              className="mode-btn"
+              style={{ padding: '6px 12px', fontSize: '0.85rem' }}
+            >
+              {sortByDistance ? 'Show original order' : 'Rank by distance'}
+            </button>
+          )}
+        </div>
+        {people.length > 0 && (
+          <div style={{ marginLeft: 'auto' }}>
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm('Remove all people? This cannot be undone.')) {
+                  onClearAllPeople?.();
+                }
+              }}
+              className="mode-btn clear-btn"
+              title="Remove all people"
+            >
+              Clear all people
+            </button>
+          </div>
+        )}
+      </div>
       {!meetingPoint && (
         <p style={{ color: 'var(--muted)', fontSize: '0.875rem', margin: 0 }}>
           Set a meeting point on the map, then click &quot;Calculate distances&quot;.
