@@ -1,10 +1,18 @@
 import express from 'express';
+import dns from 'dns';
 import cors from 'cors';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OSRM_BASE = process.env.OSRM_URL || 'https://router.project-osrm.org';
+
+// Prefer IPv4 address order to avoid IPv6 resolution/connect issues in some hosts
+try {
+  if (dns.setDefaultResultOrder) dns.setDefaultResultOrder('ipv4first');
+} catch (e) {
+  // ignore if not supported
+}
 
 const app = express();
 app.use(cors());
