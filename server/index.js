@@ -1,25 +1,71 @@
 import express from 'express';
 import dns from 'dns';
 import { URL } from 'url';
+import https from 'https';
 
 const dnsPromises = dns.promises;
 
-async function fetchPreferIPv4(rawUrl, options = {}) {
-  try {
-    const u = new URL(rawUrl);
-    const host = u.hostname;
-    // try to resolve an IPv4 address first
-    const res = await dnsPromises.lookup(host, { family: 4 });
-    if (res && res.address) {
-      // replace hostname with IPv4 address but keep original Host header
-      u.hostname = res.address;
-      const headers = Object.assign({}, options.headers || {}, { Host: host });
-      return fetch(u.toString(), { ...options, headers });
-    }
-  } catch (e) {
-    // lookup failed or no IPv4; fall back to default fetch
+// Perform an HTTPS GET using an IPv4-only DNS lookup while preserving TLS SNI (servername).
+// Returns parsed JSON.
+async function fetchPreferIPv4Json(rawUrl, timeoutMs = 15000) {
+  const u = new URL(rawUrl);
+  const host = u.hostname;
+  if (u.protocol !== 'https:') {
+    // fallback to global fetch for non-HTTPS
+    const res = await fetch(rawUrl, { signal: AbortSignal.timeout(timeoutMs) });
+    return await res.json();
   }
-  return fetch(rawUrl, options);
+
+  // Try resolving IPv4 first
+  let addresses = [];
+  try {
+    const r = await dnsPromises.lookup(host, { all: true, family: 4 });
+    addresses = r.map((x) => x.address);
+  } catch (e) {
+    // ignore and fall back to system resolver
+  }
+
+  // If no IPv4, use system resolver by passing undefined to lookup
+  const lookupFn = (hostname, options, callback) => {
+    if (addresses.length > 0) {
+      // return the first IPv4 address
+      return process.nextTick(() => callback(null, addresses[0], 4));
+    }
+    // default lookup
+    return dns.lookup(hostname, options, callback);
+  };
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: host,
+        path: u.pathname + u.search,
+        method: 'GET',
+        headers: { Host: host, ...(u.username ? { Authorization: `Basic ${u.username}:${u.password}` } : {}) },
+        lookup: lookupFn,
+        servername: host,
+        timeout: timeoutMs,
+      },
+      (res) => {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => (body += chunk));
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(body || '{}');
+            resolve(parsed);
+          } catch (err) {
+            reject(err);
+          }
+        });
+      }
+    );
+    req.on('timeout', () => {
+      req.destroy(new Error('request timeout'));
+    });
+    req.on('error', (err) => reject(err));
+    req.end();
+  });
 }
 import cors from 'cors';
 import { fileURLToPath } from 'url';
@@ -55,8 +101,7 @@ app.get('/api/table', async (req, res) => {
   const destinations = String(points.length - 1);
   const url = `${OSRM_BASE}/table/v1/driving/${coordsParam}?sources=${sources}&destinations=${destinations}&annotations=duration,distance`;
   try {
-    const r = await fetchPreferIPv4(url, { signal: AbortSignal.timeout(15000) });
-    const data = await r.json();
+    const data = await fetchPreferIPv4Json(url, 15000);
     if (data.code !== 'Ok') {
       console.error('[OSRM table]', data.code, data.message || '', 'coords:', coordsParam.slice(0, 80) + '...');
       return res.status(502).json({ error: data.message || data.code || 'OSRM error' });
@@ -77,8 +122,7 @@ app.get('/api/route', async (req, res) => {
   }
   const url = `${OSRM_BASE}/route/v1/driving/${coords}?overview=full&geometries=geojson`;
   try {
-    const r = await fetchPreferIPv4(url, { signal: AbortSignal.timeout(15000) });
-    const data = await r.json();
+    const data = await fetchPreferIPv4Json(url, 15000);
     if (data.code !== 'Ok') {
       console.error('[OSRM route]', data.code, data.message || '', 'coords:', coords.slice(0, 60) + '...');
       return res.status(502).json({ error: data.message || data.code || 'OSRM error' });
