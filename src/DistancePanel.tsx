@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type { Person } from './App';
 import { getPersonColor } from './colors';
 import type { LatLng } from './types';
@@ -47,6 +47,45 @@ export function DistancePanel({
   onClearAllPeople?: () => void;
 }) {
   const [sortByDistance, setSortByDistance] = useState(false);
+  const [width, setWidth] = useState(320);
+  const [isResizing, setIsResizing] = useState(false);
+  const panelRef = useRef<HTMLElement>(null);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsResizing(true);
+    e.preventDefault();
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing || !panelRef.current) return;
+      e.preventDefault();
+      const newWidth = window.innerWidth - e.clientX;
+      const clampedWidth = Math.max(280, Math.min(500, newWidth));
+      setWidth(clampedWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    if (isResizing) {
+      document.body.style.cursor = 'ew-resize';
+      document.body.style.userSelect = 'none';
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    } else {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing]);
 
   const handleSaveFavourite = () => {
     const name = window.prompt('Name this meeting place');
@@ -72,7 +111,25 @@ export function DistancePanel({
       : people;
 
   return (
-    <aside className="distance-panel">
+    <aside
+      ref={panelRef}
+      className="distance-panel"
+      style={{ width: `${width}px` }}
+    >
+      <div
+        className="resize-handle"
+        onMouseDown={handleMouseDown}
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: '4px',
+          cursor: 'ew-resize',
+          zIndex: 10,
+          background: isResizing ? 'var(--accent)' : 'transparent',
+        }}
+      />
       <h2 style={{ margin: '0 0 8px', fontSize: '0.9rem', fontWeight: 600, color: 'var(--muted)' }}>
         Favourite meeting places
       </h2>
@@ -324,22 +381,6 @@ export function DistancePanel({
               {formatKm(totalKm)}
             </div>
           </div>
-          {maxRoute && (
-            <div>
-              <span style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>Longest drive</span>
-              <div style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--orange)' }}>
-                {formatKm(maxRoute.distance)}
-              </div>
-              {longestDuration && (
-                <div style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
-                  ~{formatDuration(longestDuration.duration)} drive
-                </div>
-              )}
-            </div>
-          )}
-          <p style={{ fontSize: '0.75rem', color: 'var(--muted)', margin: '12px 0 0' }}>
-            Times are based on speed limits; live traffic is not included.
-          </p>
         </div>
       )}
     </aside>

@@ -92,10 +92,16 @@ body {
 .distance-panel {
   width: 320px;
   min-width: 280px;
+  max-width: 500px;
   background: var(--surface);
   border-left: 1px solid var(--border);
   padding: 16px;
   overflow-y: auto;
+  position: relative;
+}
+
+.resize-handle:hover {
+  background: var(--border);
 }
 
 /* Mobile: stack map and panel vertically */

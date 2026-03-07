@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, useMapEvents, useMap, Marker, Polyline, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import { DistancePanel } from './DistancePanel';
+import { DistanceSummary } from './DistanceSummary';
 import {
   loadSession,
   saveSession,
@@ -387,6 +388,7 @@ export default function App() {
               people={people}
               meetingPoint={meetingPoint}
             />
+            <DistanceSummary routes={routes} meetingPoint={meetingPoint} />
             <MapClickHandler onAddPerson={addPerson} onSetMeeting={setMeeting} mode={mode} />
             {people.map((p) => (
               <Marker
