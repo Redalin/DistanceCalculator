@@ -1,5 +1,26 @@
 import express from 'express';
 import dns from 'dns';
+import { URL } from 'url';
+
+const dnsPromises = dns.promises;
+
+async function fetchPreferIPv4(rawUrl, options = {}) {
+  try {
+    const u = new URL(rawUrl);
+    const host = u.hostname;
+    // try to resolve an IPv4 address first
+    const res = await dnsPromises.lookup(host, { family: 4 });
+    if (res && res.address) {
+      // replace hostname with IPv4 address but keep original Host header
+      u.hostname = res.address;
+      const headers = Object.assign({}, options.headers || {}, { Host: host });
+      return fetch(u.toString(), { ...options, headers });
+    }
+  } catch (e) {
+    // lookup failed or no IPv4; fall back to default fetch
+  }
+  return fetch(rawUrl, options);
+}
 import cors from 'cors';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -34,7 +55,7 @@ app.get('/api/table', async (req, res) => {
   const destinations = String(points.length - 1);
   const url = `${OSRM_BASE}/table/v1/driving/${coordsParam}?sources=${sources}&destinations=${destinations}&annotations=duration,distance`;
   try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    const r = await fetchPreferIPv4(url, { signal: AbortSignal.timeout(15000) });
     const data = await r.json();
     if (data.code !== 'Ok') {
       console.error('[OSRM table]', data.code, data.message || '', 'coords:', coordsParam.slice(0, 80) + '...');
@@ -56,7 +77,7 @@ app.get('/api/route', async (req, res) => {
   }
   const url = `${OSRM_BASE}/route/v1/driving/${coords}?overview=full&geometries=geojson`;
   try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    const r = await fetchPreferIPv4(url, { signal: AbortSignal.timeout(15000) });
     const data = await r.json();
     if (data.code !== 'Ok') {
       console.error('[OSRM route]', data.code, data.message || '', 'coords:', coords.slice(0, 60) + '...');
