@@ -10,6 +10,10 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
   IMAGE_TAG: latest
+  
+permissions:
+  contents: read
+  packages: write
 
 jobs:
 
@@ -34,7 +38,9 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          # Use a personal access token with `write:packages` (and `read:packages`) scopes
+          # Create a PAT and add it to repository secrets as `PERSONAL_ACCESS_TOKEN`.
+          password: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
