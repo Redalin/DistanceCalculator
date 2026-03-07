@@ -34,6 +34,8 @@ export function DistancePanel({
   onRemoveFavourite,
   onSetMeetingFromFavourite,
   onClearAllPeople,
+  showPanel,
+  onTogglePanel,
 }: {
   people: Person[];
   routes: RouteEntry[];
@@ -45,11 +47,18 @@ export function DistancePanel({
   onRemoveFavourite: (id: string) => void;
   onSetMeetingFromFavourite: (position: LatLng) => void;
   onClearAllPeople?: () => void;
+  showPanel?: boolean;
+  onTogglePanel?: () => void;
 }) {
   const [sortByDistance, setSortByDistance] = useState(false);
   const [width, setWidth] = useState(320);
   const [isResizing, setIsResizing] = useState(false);
   const panelRef = useRef<HTMLElement>(null);
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileHeight, setMobileHeight] = useState<number | null>(null);
+  const mobileDraggingRef = useRef(false);
+  const mobileStartYRef = useRef(0);
+  const mobileStartHeightRef = useRef(0);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsResizing(true);
@@ -57,6 +66,8 @@ export function DistancePanel({
   };
 
   useEffect(() => {
+    // desktop horizontal resize
+    if (isMobile) return;
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizing || !panelRef.current) return;
       e.preventDefault();
@@ -85,7 +96,57 @@ export function DistancePanel({
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
-  }, [isResizing]);
+  }, [isResizing, isMobile]);
+
+  // mobile vertical resize (pointer events)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 720px)');
+    const onChange = () => {
+      setIsMobile(mq.matches);
+      if (mq.matches && mobileHeight == null) setMobileHeight(Math.round(window.innerHeight * 0.5));
+      if (!mq.matches) {
+        mobileDraggingRef.current = false;
+        document.body.style.touchAction = '';
+      }
+    };
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const onPointerMove = (e: PointerEvent) => {
+      if (!mobileDraggingRef.current) return;
+      e.preventDefault();
+      const clientY = e.clientY;
+      const delta = mobileStartYRef.current - clientY;
+      const newHeight = Math.max(120, Math.min(window.innerHeight - 80, mobileStartHeightRef.current + delta));
+      setMobileHeight(newHeight);
+    };
+    const onPointerUp = () => {
+      mobileDraggingRef.current = false;
+      document.body.style.touchAction = '';
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+    if (mobileDraggingRef.current) {
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+    }
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+  }, []);
+
+  const startMobileDrag = (e: React.PointerEvent) => {
+    if (!isMobile) return;
+    mobileDraggingRef.current = true;
+    mobileStartYRef.current = e.clientY;
+    mobileStartHeightRef.current = mobileHeight ?? Math.round(window.innerHeight * 0.5);
+    document.body.style.touchAction = 'none';
+  };
 
   const handleSaveFavourite = () => {
     const name = window.prompt('Name this meeting place');
@@ -113,23 +174,55 @@ export function DistancePanel({
   return (
     <aside
       ref={panelRef}
-      className="distance-panel"
-      style={{ width: `${width}px` }}
+      className={`distance-panel ${isMobile ? 'mobile' : ''} ${isResizing ? 'resizing' : ''}`}
+      style={
+        showPanel === false
+          ? { display: 'none' }
+          : isMobile && mobileHeight
+          ? { height: `${mobileHeight}px`, maxHeight: 'none' as const, width: '100%' }
+          : { width: `${width}px` }
+      }
     >
-      <div
-        className="resize-handle"
-        onMouseDown={handleMouseDown}
-        style={{
-          position: 'absolute',
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: '4px',
-          cursor: 'ew-resize',
-          zIndex: 10,
-          background: isResizing ? 'var(--accent)' : 'transparent',
-        }}
-      />
+      {/* desktop resize handle (left edge) */}
+      {!isMobile && (
+        <div
+          className="resize-handle"
+          onMouseDown={handleMouseDown}
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: '4px',
+            cursor: 'ew-resize',
+            zIndex: 10,
+            background: isResizing ? 'var(--accent)' : 'transparent',
+          }}
+        />
+      )}
+      {/* mobile drag handle (top bar) */}
+      {isMobile && (
+        <div
+          className="drag-handle"
+          onPointerDown={startMobileDrag}
+          role="separator"
+          aria-orientation="vertical"
+          title="Drag to resize"
+        >
+        </div>
+      )}
+      {/* panel-level toggle for desktop/mobile: top-right */}
+      {onTogglePanel && (
+        <button
+          type="button"
+          className="mode-btn panel-toggle-top"
+          onClick={onTogglePanel}
+          title="Toggle panel"
+          style={{ position: 'absolute', top: 10, right: 10 }}
+        >
+          {showPanel === false ? 'Show' : 'Hide'}
+        </button>
+      )}
       <h2 style={{ margin: '0 0 8px', fontSize: '0.9rem', fontWeight: 600, color: 'var(--muted)' }}>
         Favourite meeting places
       </h2>
@@ -365,23 +458,6 @@ export function DistancePanel({
             );
           })}
         </ul>
-      )}
-      {routes.length > 0 && (
-        <div
-          style={{
-            padding: '12px',
-            background: 'var(--bg)',
-            borderRadius: '8px',
-            border: '1px solid var(--border)',
-          }}
-        >
-          <div style={{ marginBottom: '8px' }}>
-            <span style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>Combined total</span>
-            <div style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--accent)' }}>
-              {formatKm(totalKm)}
-            </div>
-          </div>
-        </div>
       )}
     </aside>
   );

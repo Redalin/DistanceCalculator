@@ -38,15 +38,15 @@ export function DistanceSummary({
     <div
       style={{
         position: 'absolute',
-        top: '12px',
+        top: '80px',
         left: '12px',
-        zIndex: 1000,
+        zIndex: 400,
         background: 'var(--surface)',
         border: '1px solid var(--border)',
         borderRadius: '8px',
         padding: '12px',
         boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
-        minWidth: '200px',
+        minWidth: 'fit-content',
         fontSize: '0.9rem',
       }}
     >
@@ -69,9 +69,6 @@ export function DistanceSummary({
           )}
         </div>
       )}
-      <p style={{ fontSize: '0.7rem', color: 'var(--muted)', margin: '8px 0 0' }}>
-        Times are based on speed limits; live traffic is not included.
-      </p>
     </div>
   );
 }
