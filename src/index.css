@@ -1,0 +1,78 @@
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #0f1419;
+  --surface: #1a2332;
+  --border: #2d3a4d;
+  --text: #e6edf3;
+  --muted: #8b9cb8;
+  --accent: #58a6ff;
+  --accent-dim: #388bfd66;
+  --green: #3fb950;
+  --orange: #d29922;
+  --font-sans: 'DM Sans', system-ui, sans-serif;
+}
+
+[data-theme='light'] {
+  --bg: #f0f2f5;
+  --surface: #ffffff;
+  --border: #dde1e6;
+  --text: #1a1a1a;
+  --muted: #5c6370;
+  --accent: #0969da;
+  --accent-dim: #0969da33;
+  --green: #1a7f37;
+  --orange: #9a6700;
+}
+
+html, body, #root {
+  margin: 0;
+  height: 100%;
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Leaflet overrides */
+.leaflet-container {
+  background: var(--surface) !important;
+  font-family: var(--font-sans);
+}
+.leaflet-popup-content-wrapper {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.leaflet-popup-tip {
+  background: var(--surface);
+}
+
+.leaflet-div-icon.person-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* Map theme control */
+.map-theme-control {
+  padding: 6px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  font-size: 0.85rem;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.map-theme-control:hover {
+  background: var(--border);
+}
