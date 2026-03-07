@@ -34,7 +34,7 @@ app.get('/api/table', async (req, res) => {
     }
     res.json(data);
   } catch (err) {
-    console.error('[OSRM table]', err.message || err, 'url:', url.slice(0, 100) + '...');
+    console.error('[OSRM table] fetch failed', err.stack || err, 'url:', url.slice(0, 100) + '...');
     res.status(502).json({ error: err.message || 'Routing service unavailable' });
   }
 });
@@ -56,7 +56,7 @@ app.get('/api/route', async (req, res) => {
     }
     res.json(data);
   } catch (err) {
-    console.error('[OSRM route]', err.message || err, 'url:', url.slice(0, 100) + '...');
+    console.error('[OSRM route] fetch failed', err.stack || err, 'url:', url.slice(0, 100) + '...');
     res.status(502).json({ error: err.message || 'Routing service unavailable' });
   }
 });
