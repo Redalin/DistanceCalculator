@@ -56,7 +56,7 @@ export function DistancePanel({
   const panelRef = useRef<HTMLElement>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [mobileHeight, setMobileHeight] = useState<number | null>(null);
-  const mobileDraggingRef = useRef(false);
+  const [mobileDragging, setMobileDragging] = useState(false);
   const mobileStartYRef = useRef(0);
   const mobileStartHeightRef = useRef(0);
 
@@ -71,7 +71,7 @@ export function DistancePanel({
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizing || !panelRef.current) return;
       e.preventDefault();
-      const newWidth = window.innerWidth - e.clientX;
+      const newWidth = e.clientX;
       const clampedWidth = Math.max(280, Math.min(500, newWidth));
       setWidth(clampedWidth);
     };
@@ -105,7 +105,7 @@ export function DistancePanel({
       setIsMobile(mq.matches);
       if (mq.matches && mobileHeight == null) setMobileHeight(Math.round(window.innerHeight * 0.5));
       if (!mq.matches) {
-        mobileDraggingRef.current = false;
+        setMobileDragging(false);
         document.body.style.touchAction = '';
       }
     };
@@ -117,7 +117,7 @@ export function DistancePanel({
 
   useEffect(() => {
     const onPointerMove = (e: PointerEvent) => {
-      if (!mobileDraggingRef.current) return;
+      if (!mobileDragging) return;
       e.preventDefault();
       const clientY = e.clientY;
       const delta = mobileStartYRef.current - clientY;
@@ -125,12 +125,12 @@ export function DistancePanel({
       setMobileHeight(newHeight);
     };
     const onPointerUp = () => {
-      mobileDraggingRef.current = false;
+      setMobileDragging(false);
       document.body.style.touchAction = '';
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
     };
-    if (mobileDraggingRef.current) {
+    if (mobileDragging) {
       window.addEventListener('pointermove', onPointerMove);
       window.addEventListener('pointerup', onPointerUp);
     }
@@ -138,11 +138,11 @@ export function DistancePanel({
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
     };
-  }, []);
+  }, [mobileDragging]);
 
   const startMobileDrag = (e: React.PointerEvent) => {
     if (!isMobile) return;
-    mobileDraggingRef.current = true;
+    setMobileDragging(true);
     mobileStartYRef.current = e.clientY;
     mobileStartHeightRef.current = mobileHeight ?? Math.round(window.innerHeight * 0.5);
     document.body.style.touchAction = 'none';
@@ -174,7 +174,7 @@ export function DistancePanel({
   return (
     <aside
       ref={panelRef}
-      className={`distance-panel ${isMobile ? 'mobile' : ''} ${isResizing ? 'resizing' : ''}`}
+      className={`distance-panel ${isMobile ? 'mobile' : ''} ${isResizing ? 'resizing' : ''} ${mobileDragging ? 'dragging' : ''}`}
       style={
         showPanel === false
           ? { display: 'none' }
@@ -190,7 +190,7 @@ export function DistancePanel({
           onMouseDown={handleMouseDown}
           style={{
             position: 'absolute',
-            left: 0,
+            right: 0,
             top: 0,
             bottom: 0,
             width: '4px',
@@ -200,17 +200,14 @@ export function DistancePanel({
           }}
         />
       )}
-      {/* mobile drag handle (top bar) */}
-      {isMobile && (
-        <div
-          className="drag-handle"
-          onPointerDown={startMobileDrag}
-          role="separator"
-          aria-orientation="vertical"
-          title="Drag to resize"
-        >
-        </div>
-      )}
+      {/* drag handle */}
+      <div
+        className="drag-handle"
+        onPointerDown={isMobile ? startMobileDrag : undefined}
+        role="separator"
+        aria-orientation={isMobile ? "vertical" : undefined}
+        title={isMobile ? "Drag to resize" : undefined}
+      ></div>
       {/* panel-level toggle for desktop/mobile: top-right */}
       {onTogglePanel && (
         <button
@@ -220,7 +217,7 @@ export function DistancePanel({
           title="Toggle panel"
           style={{ position: 'absolute', top: 10, right: 10 }}
         >
-          {showPanel === false ? 'Show' : 'Hide'}
+          {showPanel === false ? '^' : 'X'}
         </button>
       )}
       <h2 style={{ margin: '0 0 8px', fontSize: '0.9rem', fontWeight: 600, color: 'var(--muted)' }}>

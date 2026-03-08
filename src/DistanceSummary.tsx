@@ -38,13 +38,13 @@ export function DistanceSummary({
     <div
       style={{
         position: 'absolute',
-        top: '80px',
-        left: '12px',
+        top: '50px',
+        left: '10px',
         zIndex: 400,
         background: 'var(--surface)',
         border: '1px solid var(--border)',
         borderRadius: '8px',
-        padding: '12px',
+        padding: '10px',
         boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
         minWidth: 'fit-content',
         fontSize: '0.9rem',

@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, useMapEvents, useMap, Marker, Polyline, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, useMapEvents, useMap, Marker, Polyline, Popup, ZoomControl } from 'react-leaflet';
 import L from 'leaflet';
 import { DistancePanel } from './DistancePanel';
 import { DistanceSummary } from './DistanceSummary';
@@ -45,11 +45,15 @@ function MapControls({
   onToggleTheme,
   people,
   meetingPoint,
+  showPanel,
+  onTogglePanel,
 }: {
   theme: Theme;
   onToggleTheme: () => void;
   people: Person[];
   meetingPoint: LatLng | null;
+  showPanel: boolean;
+  onTogglePanel: () => void;
 }) {
   const map = useMap();
   const goHome = useCallback(() => {
@@ -69,7 +73,7 @@ function MapControls({
     const bounds = L.latLngBounds(positions.map(([lat, lng]) => [lat, lng] as L.LatLngTuple));
     map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
   }, [map, people, meetingPoint]);
-  return (
+  return showPanel ? (
     <div
       style={{
         position: 'absolute',
@@ -113,6 +117,26 @@ function MapControls({
       >
         <span aria-hidden>{theme === 'dark' ? '☀️' : '🌙'}</span>
         <span>{theme === 'dark' ? 'Light map' : 'Dark map'}</span>
+      </div>
+    </div>
+  ) : (
+    <div
+      style={{
+        position: 'absolute',
+        top: '10px',
+        left: '10px',
+        zIndex: 1000,
+      }}
+    >
+      <div
+        className="map-theme-control"
+        onClick={onTogglePanel}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onTogglePanel()}
+        title="Show panel"
+      >
+        &gt;
       </div>
     </div>
   );
@@ -339,14 +363,6 @@ export default function App() {
           <button
             type="button"
             className="mode-btn"
-            onClick={() => setShowPanel((s) => !s)}
-            title="Show or hide the info panel"
-          >
-            {showPanel ? 'Hide panel' : 'Show panel'}
-          </button>
-          <button
-            type="button"
-            className="mode-btn"
             data-active={mode === 'person'}
             onClick={() => setMode(mode === 'person' ? null : 'person')}
           >
@@ -360,69 +376,87 @@ export default function App() {
           >
             Set meeting point
           </button>
-          {canCalculate && (
-            <button
-              type="button"
-              className="mode-btn primary"
-              onClick={fetchDistances}
-              disabled={loading}
-            >
-              {loading ? 'Calculating…' : 'Calculate distances'}
-            </button>
-          )}
+
           {hasMeeting && (
             <button type="button" className="mode-btn" onClick={clearMeeting}>
               Clear meeting point
             </button>
+
           )}
           {/* "Clear all people" moved into the People & distances panel for better mobile layout */}
         </div>
       </header>
 
-      <div className="main-content">
+      <div className={`main-content ${showPanel ? '' : 'panel-hidden'}`}>
+        <DistancePanel
+          people={people}
+          routes={routes}
+          meetingPoint={meetingPoint}
+          favourites={favourites}
+          onRemovePerson={removePerson}
+          onUpdateName={updatePersonName}
+          onAddFavourite={addFavourite}
+          onRemoveFavourite={removeFavourite}
+          onSetMeetingFromFavourite={setMeetingFromFavourite}
+          onClearAllPeople={clearAllPeople}
+          showPanel={showPanel}
+          onTogglePanel={() => setShowPanel((s) => !s)}
+        />
         <div className="map-wrapper">
           <MapContainer
             center={[51.505, -0.09]}
             zoom={10}
             style={{ height: '100%', width: '100%' }}
-            zoomControl={true}
+            zoomControl={false}
           >
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
               url={tileUrl}
             />
+            <ZoomControl position="topright" />
             <MapControls
               theme={theme}
               onToggleTheme={toggleTheme}
               people={people}
               meetingPoint={meetingPoint}
+              showPanel={showPanel}
+              onTogglePanel={() => setShowPanel((s) => !s)}
             />
             <DistanceSummary routes={routes} meetingPoint={meetingPoint} />
             <MapClickHandler onAddPerson={addPerson} onSetMeeting={setMeeting} mode={mode} />
-            {people.map((p) => (
-              <Marker
-                key={p.id}
-                position={p.position}
-                icon={createPersonIcon(getPersonColor(people, p.id))}
-                draggable
-                eventHandlers={{
-                  dragend: (e) => {
-                    const pos = e.target.getLatLng();
-                    movePerson(p.id, pos.lat, pos.lng);
-                  },
-                }}
-              >
-                <Popup>
-                  <strong>{p.name}</strong>
-                  <br />
-                  <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Drag to move</span>
-                  <br />
-                  <button type="button" onClick={() => removePerson(p.id)}>
-                    Remove
-                  </button>
-                </Popup>
-              </Marker>
-            ))}
+            {people.map((p) => {
+              const route = routes.find((r) => r.personId === p.id);
+              return (
+                <Marker
+                  key={p.id}
+                  position={p.position}
+                  icon={createPersonIcon(getPersonColor(people, p.id))}
+                  draggable
+                  eventHandlers={{
+                    dragend: (e) => {
+                      const pos = e.target.getLatLng();
+                      movePerson(p.id, pos.lat, pos.lng);
+                    },
+                  }}
+                >
+                  <Popup>
+                    <strong>{p.name}</strong>
+                    {route && (
+                      <>
+                        <br />
+                        Distance: {route.distance.toFixed(1)} km
+                      </>
+                    )}
+                    <br />
+                    <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Drag to move</span>
+                    <br />
+                    <button type="button" onClick={() => removePerson(p.id)}>
+                      Remove
+                    </button>
+                  </Popup>
+                </Marker>
+              );
+            })}
             {meetingPoint && (
               <Marker
                 position={meetingPoint}
@@ -457,21 +491,8 @@ export default function App() {
             )}
           </MapContainer>
         </div>
-        <DistancePanel
-          people={people}
-          routes={routes}
-          meetingPoint={meetingPoint}
-          favourites={favourites}
-          onRemovePerson={removePerson}
-          onUpdateName={updatePersonName}
-          onAddFavourite={addFavourite}
-          onRemoveFavourite={removeFavourite}
-          onSetMeetingFromFavourite={setMeetingFromFavourite}
-          onClearAllPeople={clearAllPeople}
-          showPanel={showPanel}
-          onTogglePanel={() => setShowPanel((s) => !s)}
-        />
       </div>
+      {loading && <div className="toast">Calculating distances...</div>}
     </div>
   );
 }
