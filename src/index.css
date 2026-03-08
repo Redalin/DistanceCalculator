@@ -94,7 +94,7 @@ body {
   min-width: 280px;
   max-width: 720px;
   background: var(--surface);
-  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
   padding: 16px;
   overflow-y: auto;
   position: relative;
@@ -112,6 +112,9 @@ body {
   .map-wrapper {
     order: 1;
     height: 50vh;
+  }
+  .main-content.panel-hidden .map-wrapper {
+    height: 100vh;
   }
   .distance-panel {
     order: 2;
@@ -139,18 +142,42 @@ body {
   overflow: auto;
 }
 .distance-panel .drag-handle {
-  height: 10px;
-  width: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.02), transparent);
-  cursor: ns-resize;
+  position: absolute;
+  z-index: 1;
   display: block;
-  border-top-left-radius: 8px;
-  border-top-right-radius: 8px;
-  margin-bottom: 6px;
+  border-radius: 8px;
 }
+
+/* Mobile: horizontal bar at top center */
+.distance-panel.mobile .drag-handle {
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  height: 10px;
+  width: 100px;
+  background: linear-gradient(to bottom, transparent 3px, var(--border) 3px, var(--border) 7px, transparent 7px);
+  cursor: ns-resize;
+}
+
+/* Web: vertical bar on right center */
+.distance-panel:not(.mobile) .drag-handle {
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 100px;
+  width: 10px;
+  background: linear-gradient(to right, transparent 3px, var(--border) 3px, var(--border) 7px, transparent 7px);
+  cursor: default;
+}
+
 .distance-panel.dragging .drag-handle,
 .distance-panel.resizing .drag-handle {
-  background: linear-gradient(90deg, transparent, rgba(88,166,255,0.12), transparent);
+  background: linear-gradient(to bottom, transparent 3px, var(--accent) 3px, var(--accent) 7px, transparent 7px);
+}
+
+.distance-panel:not(.mobile).dragging .drag-handle,
+.distance-panel:not(.mobile).resizing .drag-handle {
+  background: linear-gradient(to right, transparent 3px, var(--accent) 3px, var(--accent) 7px, transparent 7px);
 }
 
 /* panel toggle buttons */
@@ -187,4 +214,21 @@ body {
     padding: 6px 8px;
     font-size: 0.85rem;
   }
+}
+
+/* Toast notification */
+.toast {
+  position: fixed;
+  opacity: 0.5;
+  top: 80px;
+  left: 50%;
+  /* transform: translateX(-0%); */
+  z-index: 1001;
+  background: var(--surface);
+  color: var(--text);
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  font-size: 0.9rem;
 }
