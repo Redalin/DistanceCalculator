@@ -61,7 +61,7 @@ function MapControls({
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
-        map.setView([latitude, longitude], 14);
+        map.setView(L.latLng(latitude, longitude), 14);
       },
       () => {}
     );
@@ -70,7 +70,7 @@ function MapControls({
     const positions: LatLng[] = [...people.map((p) => p.position)];
     if (meetingPoint) positions.push(meetingPoint);
     if (positions.length === 0) return;
-    const bounds = L.latLngBounds(positions.map(([lat, lng]) => [lat, lng] as L.LatLngTuple));
+    const bounds = L.latLngBounds(positions.map(([lat, lng]) => L.latLng(lat, lng)));
     map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
   }, [map, people, meetingPoint]);
   return showPanel ? (
@@ -429,7 +429,7 @@ export default function App() {
               return (
                 <Marker
                   key={p.id}
-                  position={p.position}
+                  position={L.latLng(p.position[0], p.position[1])}
                   icon={createPersonIcon(getPersonColor(people, p.id))}
                   draggable
                   eventHandlers={{
@@ -459,7 +459,7 @@ export default function App() {
             })}
             {meetingPoint && (
               <Marker
-                position={meetingPoint}
+                position={L.latLng(meetingPoint[0], meetingPoint[1])}
                 icon={meetingIcon}
                 draggable
                 eventHandlers={{
