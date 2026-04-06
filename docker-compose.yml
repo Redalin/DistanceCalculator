@@ -2,9 +2,9 @@ services:
   app:
     build: .
     ports:
-      - "3000:3000"
+      - "3050:3050"
     environment:
-      - PORT=3000
+      - PORT=3050
       - OSRM_URL=https://router.project-osrm.org
       # Optional: use your own OSRM instance
       # - OSRM_URL=http://your-osrm:5000
