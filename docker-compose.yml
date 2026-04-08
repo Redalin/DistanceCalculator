@@ -7,4 +7,4 @@ services:
       - PORT=3050
       # OSRM_URL=https://router.project-osrm.org
       # Optional: use your own OSRM instance
-      - OSRM_URL=http://localhost:5000
+      - OSRM_URL=http://osrm:5000
