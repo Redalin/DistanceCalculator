@@ -1,6 +1,6 @@
 {
   "name": "distance-calculator",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -14,7 +14,7 @@
     "docker:run": "docker run -p 3000:3000 distance-calculator"
   },
   "dependencies": {
-    "cors": "^2.8.5",
+    "cors": "^2.8.6",
     "express": "^4.21.0"
   },
   "devDependencies": {
