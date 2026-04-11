@@ -340,7 +340,7 @@ export default function App() {
   }, []);
 
   const hasMeeting = meetingPoint !== null;
-  const canCalculate = hasMeeting && people.length > 0;
+  // const canCalculate = hasMeeting && people.length > 0;
   const tileUrl = TILE_URLS[theme];
 
   return (
@@ -434,7 +434,7 @@ export default function App() {
                   draggable
                   eventHandlers={{
                     dragend: (e) => {
-                      const pos = e.target.getLatLng();
+                      const pos = e.target.getLatLng().wrap();
                       movePerson(p.id, pos.lat, pos.lng);
                     },
                   }}
@@ -464,7 +464,7 @@ export default function App() {
                 draggable
                 eventHandlers={{
                   dragend: (e) => {
-                    const pos = e.target.getLatLng();
+                    const pos = e.target.getLatLng().wrap();
                     moveMeetingPoint(pos.lat, pos.lng);
                   },
                 }}
