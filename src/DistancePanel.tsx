@@ -153,14 +153,14 @@ export function DistancePanel({
     if (name?.trim()) onAddFavourite(name.trim());
   };
 
-  const totalKm = routes.reduce((a, r) => a + r.distance, 0);
+  // const totalKm = routes.reduce((a, r) => a + r.distance, 0);
   const maxRoute = routes.length
     ? routes.reduce((a, b) => (b.distance > a.distance ? b : a))
     : null;
   const maxDistance = maxRoute?.distance ?? 0;
-  const longestDuration = routes.length
-    ? routes.reduce((a, b) => (b.duration > a.duration ? b : a))
-    : null;
+  // const longestDuration = routes.length
+  //   ? routes.reduce((a, b) => (b.duration > a.duration ? b : a))
+  //   : null;
 
   const displayPeople =
     sortByDistance && routes.length > 0
