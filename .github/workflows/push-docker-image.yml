@@ -1,4 +1,4 @@
-name: Build and Push Image to GHCR
+name: Build Docker, Push GHCR, Deploy Dockhand
 
 on:
   push:

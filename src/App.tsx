@@ -121,12 +121,7 @@ function MapControls({
     </div>
   ) : (
     <div
-      style={{
-        position: 'absolute',
-        top: '10px',
-        left: '10px',
-        zIndex: 1000,
-      }}
+      className="hidden-panel-toggle"
     >
       <div
         className="map-theme-control"
@@ -136,10 +131,22 @@ function MapControls({
         onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onTogglePanel()}
         title="Show panel"
       >
-        &gt;
+        ☰
       </div>
     </div>
   );
+}
+
+function MapResizer({ showPanel }: { showPanel: boolean }) {
+  const map = useMap();
+  useEffect(() => {
+    map.invalidateSize();
+    const timeout = setTimeout(() => {
+      map.invalidateSize();
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [showPanel, map]);
+  return null;
 }
 
 function MapClickHandler({
@@ -404,8 +411,8 @@ export default function App() {
         />
         <div className="map-wrapper">
           <MapContainer
-            center={[51.505, -0.09]}
-            zoom={10}
+            center={[-40.9006, 174.8860]}
+            zoom={6}
             style={{ height: '100%', width: '100%' }}
             zoomControl={false}
           >
@@ -422,6 +429,7 @@ export default function App() {
               showPanel={showPanel}
               onTogglePanel={() => setShowPanel((s) => !s)}
             />
+            <MapResizer showPanel={showPanel} />
             <DistanceSummary routes={routes} meetingPoint={meetingPoint} />
             <MapClickHandler onAddPerson={addPerson} onSetMeeting={setMeeting} mode={mode} />
             {people.map((p) => {

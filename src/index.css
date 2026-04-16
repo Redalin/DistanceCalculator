@@ -187,6 +187,22 @@ body {
   font-size: 0.8rem;
 }
 
+.hidden-panel-toggle {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 1000;
+}
+
+@media (max-width: 720px) {
+  .hidden-panel-toggle {
+    top: auto;
+    bottom: 24px;
+    right: 12px;
+    left: auto;
+  }
+}
+
 /* ensure mobile panel fills width */
 .distance-panel.mobile {
   width: 100% !important;
