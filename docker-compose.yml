@@ -1,5 +1,6 @@
 services:
   app:
+    restart: unless-stopped
     build: .
     ports:
       - "3050:3050"
@@ -8,3 +9,11 @@ services:
       # OSRM_URL=https://router.project-osrm.org
       # Optional: use your own OSRM instance
       - OSRM_URL=http://osrm:5000
+    networks:
+      # Rename to use the shared network to connect to the local OSRM service
+      # comment out this if you want to use the public OSRM service
+      - osrm-shared-net
+
+networks:
+  osrm-shared-net:
+    external: true
