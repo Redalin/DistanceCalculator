@@ -63,7 +63,7 @@ function MapControls({
         const { latitude, longitude } = pos.coords;
         map.setView(L.latLng(latitude, longitude), 14);
       },
-      () => {}
+      () => { }
     );
   }, [map]);
   const centerOnPoints = useCallback(() => {
@@ -83,6 +83,7 @@ function MapControls({
         display: 'flex',
         flexDirection: 'row',
         gap: '8px',
+        flexWrap: 'wrap',
       }}
     >
       {!showPanel && (
@@ -117,7 +118,7 @@ function MapControls({
         title="Zoom map to show all people and meeting point"
       >
         <span aria-hidden>◎</span>
-        <span>Center map</span>
+        <span>Center</span>
       </div>
       <div
         className="map-theme-control"
@@ -128,7 +129,7 @@ function MapControls({
         title={theme === 'dark' ? 'Switch to light map' : 'Switch to dark map'}
       >
         <span aria-hidden>{theme === 'dark' ? '☀️' : '🌙'}</span>
-        <span>{theme === 'dark' ? 'Light map' : 'Dark map'}</span>
+        <span>{theme === 'dark' ? 'Light' : 'Dark'}</span>
       </div>
     </div>
   );
@@ -417,7 +418,7 @@ export default function App() {
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
               url={tileUrl}
             />
-            <ZoomControl position="topright" />
+            <ZoomControl position="bottomright" />
             <MapControls
               theme={theme}
               onToggleTheme={toggleTheme}
