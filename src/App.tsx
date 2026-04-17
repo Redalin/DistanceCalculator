@@ -73,7 +73,7 @@ function MapControls({
     const bounds = L.latLngBounds(positions.map(([lat, lng]) => L.latLng(lat, lng)));
     map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
   }, [map, people, meetingPoint]);
-  return showPanel ? (
+  return (
     <div
       style={{
         position: 'absolute',
@@ -85,6 +85,18 @@ function MapControls({
         gap: '8px',
       }}
     >
+      {!showPanel && (
+        <div
+          className="map-theme-control"
+          onClick={onTogglePanel}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onTogglePanel()}
+          title="Show panel"
+        >
+          ☰
+        </div>
+      )}
       <div
         className="map-theme-control"
         onClick={goHome}
@@ -117,21 +129,6 @@ function MapControls({
       >
         <span aria-hidden>{theme === 'dark' ? '☀️' : '🌙'}</span>
         <span>{theme === 'dark' ? 'Light map' : 'Dark map'}</span>
-      </div>
-    </div>
-  ) : (
-    <div
-      className="hidden-panel-toggle"
-    >
-      <div
-        className="map-theme-control"
-        onClick={onTogglePanel}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onTogglePanel()}
-        title="Show panel"
-      >
-        ☰
       </div>
     </div>
   );
