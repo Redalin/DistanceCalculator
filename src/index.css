@@ -146,6 +146,7 @@ body {
   z-index: 1;
   display: block;
   border-radius: 8px;
+  touch-action: none;
 }
 
 /* Mobile: horizontal bar at top center */
