@@ -98,21 +98,9 @@ export function DistancePanel({
     };
   }, [isResizing, isMobile]);
 
-  // mobile vertical resize (pointer events)
+  // mobile vertical resize (pointer events) disabled as user requested left sidebar on all views
   useEffect(() => {
-    const mq = window.matchMedia('(max-width: 720px)');
-    const onChange = () => {
-      setIsMobile(mq.matches);
-      if (mq.matches && mobileHeight == null) setMobileHeight(Math.round(window.innerHeight * 0.5));
-      if (!mq.matches) {
-        setMobileDragging(false);
-        document.body.style.touchAction = '';
-      }
-    };
-    onChange();
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // left empty to prevent mobile layout
   }, []);
 
   useEffect(() => {

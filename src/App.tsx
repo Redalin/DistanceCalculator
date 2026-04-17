@@ -77,8 +77,8 @@ function MapControls({
     <div
       style={{
         position: 'absolute',
-        bottom: '24px',
-        right: '12px',
+        top: '12px',
+        left: '12px',
         zIndex: 1000,
         display: 'flex',
         flexDirection: 'row',
