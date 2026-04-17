@@ -2,7 +2,7 @@ name: Build Docker, Push GHCR, Deploy Dockhand
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "dev" ]
 
 env: 
   REGISTRY: ghcr.io

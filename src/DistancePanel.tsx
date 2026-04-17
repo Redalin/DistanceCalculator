@@ -51,90 +51,49 @@ export function DistancePanel({
   onTogglePanel?: () => void;
 }) {
   const [sortByDistance, setSortByDistance] = useState(false);
-  const [width, setWidth] = useState(320);
+  const [width, setWidth] = useState(250);
   const [isResizing, setIsResizing] = useState(false);
   const panelRef = useRef<HTMLElement>(null);
-  const [isMobile, setIsMobile] = useState(false);
-  const [mobileHeight, setMobileHeight] = useState<number | null>(null);
-  const [mobileDragging, setMobileDragging] = useState(false);
-  const mobileStartYRef = useRef(0);
-  const mobileStartHeightRef = useRef(0);
 
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handlePointerDown = (e: React.PointerEvent) => {
     setIsResizing(true);
+    e.currentTarget.setPointerCapture(e.pointerId);
     e.preventDefault();
   };
 
   useEffect(() => {
-    // desktop horizontal resize
-    if (isMobile) return;
-    const handleMouseMove = (e: MouseEvent) => {
+    // horizontal resize (pointer events)
+    const handlePointerMove = (e: PointerEvent) => {
       if (!isResizing || !panelRef.current) return;
       e.preventDefault();
       const newWidth = e.clientX;
-      const clampedWidth = Math.max(280, Math.min(500, newWidth));
+      const clampedWidth = Math.max(200, Math.min(500, newWidth));
       setWidth(clampedWidth);
     };
 
-    const handleMouseUp = () => {
+    const handlePointerUp = () => {
       setIsResizing(false);
     };
 
     if (isResizing) {
       document.body.style.cursor = 'ew-resize';
       document.body.style.userSelect = 'none';
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
+      document.addEventListener('pointermove', handlePointerMove);
+      document.addEventListener('pointerup', handlePointerUp);
+      document.addEventListener('pointercancel', handlePointerUp);
     } else {
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     }
 
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('pointermove', handlePointerMove);
+      document.removeEventListener('pointerup', handlePointerUp);
+      document.removeEventListener('pointercancel', handlePointerUp);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
-  }, [isResizing, isMobile]);
-
-  // mobile vertical resize (pointer events) disabled as user requested left sidebar on all views
-  useEffect(() => {
-    // left empty to prevent mobile layout
-  }, []);
-
-  useEffect(() => {
-    const onPointerMove = (e: PointerEvent) => {
-      if (!mobileDragging) return;
-      e.preventDefault();
-      const clientY = e.clientY;
-      const delta = mobileStartYRef.current - clientY;
-      const newHeight = Math.max(120, Math.min(window.innerHeight - 80, mobileStartHeightRef.current + delta));
-      setMobileHeight(newHeight);
-    };
-    const onPointerUp = () => {
-      setMobileDragging(false);
-      document.body.style.touchAction = '';
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
-    };
-    if (mobileDragging) {
-      window.addEventListener('pointermove', onPointerMove);
-      window.addEventListener('pointerup', onPointerUp);
-    }
-    return () => {
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
-    };
-  }, [mobileDragging]);
-
-  const startMobileDrag = (e: React.PointerEvent) => {
-    if (!isMobile) return;
-    setMobileDragging(true);
-    mobileStartYRef.current = e.clientY;
-    mobileStartHeightRef.current = mobileHeight ?? Math.round(window.innerHeight * 0.5);
-    document.body.style.touchAction = 'none';
-  };
+  }, [isResizing]);
 
   const handleSaveFavourite = () => {
     const name = window.prompt('Name this meeting place');
@@ -162,40 +121,29 @@ export function DistancePanel({
   return (
     <aside
       ref={panelRef}
-      className={`distance-panel ${isMobile ? 'mobile' : ''} ${isResizing ? 'resizing' : ''} ${mobileDragging ? 'dragging' : ''}`}
+      className={`distance-panel ${isResizing ? 'resizing' : ''}`}
       style={
         showPanel === false
           ? { display: 'none' }
-          : isMobile && mobileHeight
-          ? { height: `${mobileHeight}px`, maxHeight: 'none' as const, width: '100%' }
           : { width: `${width}px` }
       }
     >
-      {/* desktop resize handle (left edge) */}
-      {!isMobile && (
-        <div
-          className="resize-handle"
-          onMouseDown={handleMouseDown}
-          style={{
-            position: 'absolute',
-            right: 0,
-            top: 0,
-            bottom: 0,
-            width: '4px',
-            cursor: 'ew-resize',
-            zIndex: 10,
-            background: isResizing ? 'var(--accent)' : 'transparent',
-          }}
-        />
-      )}
-      {/* drag handle */}
+      {/* horizontal resize handle (right edge) */}
       <div
-        className="drag-handle"
-        onPointerDown={isMobile ? startMobileDrag : undefined}
-        role="separator"
-        aria-orientation={isMobile ? "vertical" : undefined}
-        title={isMobile ? "Drag to resize" : undefined}
-      ></div>
+        className="resize-handle"
+        onPointerDown={handlePointerDown}
+        style={{
+          position: 'absolute',
+          right: 0,
+          top: 0,
+          bottom: 0,
+          width: '8px',
+          cursor: 'ew-resize',
+          zIndex: 10,
+          background: isResizing ? 'var(--accent)' : 'transparent',
+          touchAction: 'none'
+        }}
+      />
       {/* panel-level toggle for desktop/mobile: top-right */}
       {onTogglePanel && (
         <button
