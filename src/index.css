@@ -115,6 +115,148 @@ body {
   }
 }
 
+.profile-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.profile-controls label {
+  font-size: 0.85rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.profile-controls select {
+  min-width: 180px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.app-header {
+  justify-content: space-between;
+}
+
+.app-header-left {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.app-header-left > * {
+  flex-shrink: 0;
+}
+
+.profile-menu-container {
+  position: relative;
+}
+
+.profile-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  min-width: 140px;
+  margin-top: 4px;
+}
+
+.profile-menu-item {
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.9rem;
+  border-radius: 0;
+}
+
+.profile-menu-item:hover {
+  background: var(--border);
+}
+
+.profile-menu-item:first-child {
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+}
+
+.profile-menu-item:last-child {
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+
+@media (max-width: 720px) {
+  .app-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .app-header-left {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .app-header-left h1 {
+    width: 100%;
+    margin-bottom: 4px;
+  }
+
+  .profile-controls {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .profile-controls select {
+    width: auto;
+    min-width: 120px;
+  }
+
+  .app-header-left > * {
+    flex-shrink: 1;
+  }
+
+  .profile-controls .mode-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+  }
+
+  .profile-menu-container {
+    position: static;
+  }
+
+  .profile-menu {
+    position: static;
+    box-shadow: none;
+    border: none;
+    margin-top: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .profile-menu-item {
+    flex: 1 1 120px;
+    min-width: 0;
+    padding: 8px 12px;
+    font-size: 0.85rem;
+  }
+}
+
 /* panel toggle buttons */
 .panel-toggle,
 .panel-toggle-top {

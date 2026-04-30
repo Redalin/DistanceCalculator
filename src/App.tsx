@@ -10,8 +10,13 @@ import {
   saveTheme,
   loadFavourites,
   saveFavourites,
+  loadProfiles,
+  saveProfiles,
+  loadActiveProfileId,
+  saveActiveProfileId,
   type Theme,
   type StoredFavourite,
+  type StoredProfile,
 } from './sessionStorage';
 import { getPersonColor } from './colors';
 import './App.css';
@@ -275,9 +280,33 @@ function initialSession(): { people: Person[]; meetingPoint: LatLng | null } {
   };
 }
 
+function initialProfiles(): { profiles: StoredProfile[]; activeProfileId: string } {
+  const storedProfiles = loadProfiles();
+  const storedActiveId = loadActiveProfileId();
+  if (storedProfiles.length > 0) {
+    const activeId = storedActiveId && storedProfiles.some((profile) => profile.id === storedActiveId)
+      ? storedActiveId
+      : storedProfiles[0].id;
+    return { profiles: storedProfiles, activeProfileId: activeId };
+  }
+
+  const session = initialSession();
+  const defaultProfile: StoredProfile = {
+    id: crypto.randomUUID(),
+    name: 'Default view',
+    people: session.people,
+    meetingPoint: session.meetingPoint,
+  };
+  return { profiles: [defaultProfile], activeProfileId: defaultProfile.id };
+}
+
 export default function App() {
-  const [people, setPeople] = useState<Person[]>(() => initialSession().people);
-  const [meetingPoint, setMeetingPoint] = useState<LatLng | null>(() => initialSession().meetingPoint);
+  const [{ profiles: initialProfilesState, activeProfileId: initialActiveProfileId }] = useState(() => initialProfiles());
+  const [profiles, setProfiles] = useState<StoredProfile[]>(initialProfilesState);
+  const [activeProfileId, setActiveProfileId] = useState<string>(initialActiveProfileId);
+  const activeProfile = profiles.find((profile) => profile.id === activeProfileId) ?? profiles[0];
+  const people = activeProfile.people;
+  const meetingPoint = activeProfile.meetingPoint;
   const [theme, setTheme] = useState<Theme>(() => loadTheme());
   const [mode, setMode] = useState<'person' | 'meeting' | null>(null);
   const [routes, setRoutes] = useState<{ personId: string; distance: number; duration: number }[]>([]);
@@ -290,6 +319,15 @@ export default function App() {
   const [addressSearchResults, setAddressSearchResults] = useState<SearchResult[]>([]);
   const [addressSearchLoading, setAddressSearchLoading] = useState(false);
   const [addressSearchError, setAddressSearchError] = useState<string | null>(null);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+
+  useEffect(() => {
+    const handleClickOutside = () => setShowProfileMenu(false);
+    if (showProfileMenu) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [showProfileMenu]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -301,40 +339,85 @@ export default function App() {
   }, [favourites]);
 
   useEffect(() => {
+    saveProfiles(profiles);
+    saveActiveProfileId(activeProfileId);
     saveSession({
-      people: people.map((p) => ({ id: p.id, name: p.name, position: p.position })),
-      meetingPoint,
+      people: activeProfile.people.map((p) => ({ id: p.id, name: p.name, position: p.position })),
+      meetingPoint: activeProfile.meetingPoint,
     });
-  }, [people, meetingPoint]);
+  }, [profiles, activeProfileId, activeProfile]);
 
-  const addPerson = useCallback((lat: number, lng: number) => {
-    const name = `Person ${people.length + 1}`;
-    setPeople((p) => [...p, { id: crypto.randomUUID(), name, position: [lat, lng] }]);
-    setMode(null);
-  }, [people.length]);
+  const saveActiveProfile = useCallback(
+    (updater: (profile: StoredProfile) => StoredProfile) => {
+      setProfiles((prev) =>
+        prev.map((profile) =>
+          profile.id === activeProfileId ? updater(profile) : profile
+        )
+      );
+    },
+    [activeProfileId]
+  );
 
-  const setMeeting = useCallback((lat: number, lng: number) => {
-    setMeetingPoint([lat, lng]);
-    setMode(null);
-  }, []);
+  const addPerson = useCallback(
+    (lat: number, lng: number) => {
+      saveActiveProfile((profile) => ({
+        ...profile,
+        people: [
+          ...profile.people,
+          { id: crypto.randomUUID(), name: `Person ${profile.people.length + 1}`, position: [lat, lng] },
+        ],
+      }));
+      setMode(null);
+    },
+    [saveActiveProfile]
+  );
 
-  const removePerson = useCallback((id: string) => {
-    setPeople((p) => p.filter((x) => x.id !== id));
-    setRoutes((r) => r.filter((x) => x.personId !== id));
-    setRouteGeometries([]);
-  }, []);
+  const setMeeting = useCallback(
+    (lat: number, lng: number) => {
+      saveActiveProfile((profile) => ({ ...profile, meetingPoint: [lat, lng] }));
+      setMode(null);
+    },
+    [saveActiveProfile]
+  );
 
-  const updatePersonName = useCallback((id: string, name: string) => {
-    setPeople((p) => p.map((x) => (x.id === id ? { ...x, name } : x)));
-  }, []);
+  const removePerson = useCallback(
+    (id: string) => {
+      saveActiveProfile((profile) => ({
+        ...profile,
+        people: profile.people.filter((x) => x.id !== id),
+      }));
+      setRoutes((r) => r.filter((x) => x.personId !== id));
+      setRouteGeometries([]);
+    },
+    [saveActiveProfile]
+  );
 
-  const movePerson = useCallback((id: string, lat: number, lng: number) => {
-    setPeople((p) => p.map((x) => (x.id === id ? { ...x, position: [lat, lng] } : x)));
-  }, []);
+  const updatePersonName = useCallback(
+    (id: string, name: string) => {
+      saveActiveProfile((profile) => ({
+        ...profile,
+        people: profile.people.map((x) => (x.id === id ? { ...x, name } : x)),
+      }));
+    },
+    [saveActiveProfile]
+  );
 
-  const moveMeetingPoint = useCallback((lat: number, lng: number) => {
-    setMeetingPoint([lat, lng]);
-  }, []);
+  const movePerson = useCallback(
+    (id: string, lat: number, lng: number) => {
+      saveActiveProfile((profile) => ({
+        ...profile,
+        people: profile.people.map((x) => (x.id === id ? { ...x, position: [lat, lng] } : x)),
+      }));
+    },
+    [saveActiveProfile]
+  );
+
+  const moveMeetingPoint = useCallback(
+    (lat: number, lng: number) => {
+      saveActiveProfile((profile) => ({ ...profile, meetingPoint: [lat, lng] }));
+    },
+    [saveActiveProfile]
+  );
 
   const openAddressSearchForNewPerson = useCallback(() => {
     setMode('person');
@@ -394,7 +477,7 @@ export default function App() {
       if (addressSearchTarget?.mode === 'add') {
         addPerson(lat, lng);
       } else if (addressSearchTarget?.mode === 'meeting') {
-        setMeetingPoint([lat, lng]);
+        setMeeting(lat, lng);
       } else if (addressSearchTarget?.personId) {
         movePerson(addressSearchTarget.personId, lat, lng);
       }
@@ -481,16 +564,16 @@ export default function App() {
   }, [people, meetingPoint, fetchDistances]);
 
   const clearMeeting = useCallback(() => {
-    setMeetingPoint(null);
+    saveActiveProfile((profile) => ({ ...profile, meetingPoint: null }));
     setRoutes([]);
     setRouteGeometries([]);
-  }, []);
+  }, [saveActiveProfile]);
 
   const clearAllPeople = useCallback(() => {
-    setPeople([]);
+    saveActiveProfile((profile) => ({ ...profile, people: [] }));
     setRoutes([]);
     setRouteGeometries([]);
-  }, []);
+  }, [saveActiveProfile]);
 
   const toggleTheme = useCallback(() => {
     setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
@@ -507,6 +590,62 @@ export default function App() {
     [meetingPoint, favourites.length]
   );
 
+  const createNewProfile = useCallback(() => {
+    const name = window.prompt('New profile name', `View ${profiles.length + 1}`)?.trim();
+    if (!name) return;
+    const profile: StoredProfile = {
+      id: crypto.randomUUID(),
+      name,
+      people: [],
+      meetingPoint: null,
+    };
+    setProfiles((prev) => [...prev, profile]);
+    setActiveProfileId(profile.id);
+    setRoutes([]);
+    setRouteGeometries([]);
+  }, [profiles.length]);
+
+  const cloneProfile = useCallback(() => {
+    const name = window.prompt('Clone profile name', `${activeProfile.name} copy`)?.trim();
+    if (!name) return;
+    const profile: StoredProfile = {
+      id: crypto.randomUUID(),
+      name,
+      people: activeProfile.people.map((person) => ({ ...person })),
+      meetingPoint: activeProfile.meetingPoint ? [...activeProfile.meetingPoint] : null,
+    };
+    setProfiles((prev) => [...prev, profile]);
+    setActiveProfileId(profile.id);
+    setRoutes([]);
+    setRouteGeometries([]);
+  }, [activeProfile, activeProfile.name]);
+
+  const renameProfile = useCallback(() => {
+    const name = window.prompt('Rename profile', activeProfile.name)?.trim();
+    if (!name || name === activeProfile.name) return;
+    setProfiles((prev) =>
+      prev.map((profile) =>
+        profile.id === activeProfileId ? { ...profile, name } : profile
+      )
+    );
+  }, [activeProfile.name, activeProfileId]);
+
+  const deleteProfile = useCallback(() => {
+    if (profiles.length <= 1) return;
+    if (!window.confirm(`Delete profile “${activeProfile.name}”?`)) return;
+    setProfiles((prev) => prev.filter((profile) => profile.id !== activeProfileId));
+    setRoutes([]);
+    setRouteGeometries([]);
+    const remaining = profiles.filter((profile) => profile.id !== activeProfileId);
+    setActiveProfileId(remaining[0].id);
+  }, [activeProfile.name, activeProfileId, profiles]);
+
+  const switchProfile = useCallback((id: string) => {
+    setActiveProfileId(id);
+    setRoutes([]);
+    setRouteGeometries([]);
+  }, []);
+
   const removeFavourite = useCallback((id: string) => {
     setFavourites((prev) => prev.filter((f) => f.id !== id));
   }, []);
@@ -522,6 +661,7 @@ export default function App() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <header
+        className="app-header"
         style={{
           padding: '12px 20px',
           background: 'var(--surface)',
@@ -529,37 +669,76 @@ export default function App() {
           display: 'flex',
           alignItems: 'center',
           gap: '16px',
-          flexWrap: 'wrap',
         }}
       >
-        <h1 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600 }}>
-          Meeting Point Distance Calculator
-        </h1>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <button
-            type="button"
-            className="mode-btn"
-            data-active={mode === 'person'}
-            onClick={() => setMode(mode === 'person' ? null : 'person')}
-          >
-            Add person
-          </button>
-          <button
-            type="button"
-            className="mode-btn"
-            data-active={mode === 'meeting'}
-            onClick={() => setMode(mode === 'meeting' ? null : 'meeting')}
-          >
-            Set meeting point
-          </button>
-
-          {hasMeeting && (
-            <button type="button" className="mode-btn" onClick={clearMeeting}>
-              Clear meeting point
+        <div className="app-header-left" style={{ display: 'flex', flex: 1, minWidth: 0, gap: '14px', alignItems: 'center' }}>
+          <h1 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600, minWidth: 0 }}>
+            Meeting Point Distance Calculator
+          </h1>
+            <button
+              type="button"
+              className="mode-btn"
+              data-active={mode === 'person'}
+              onClick={() => setMode(mode === 'person' ? null : 'person')}
+            >
+              Add person
             </button>
-
-          )}
-          {/* "Clear all people" moved into the People & distances panel for better mobile layout */}
+            <button
+              type="button"
+              className="mode-btn"
+              data-active={mode === 'meeting'}
+              onClick={() => setMode(mode === 'meeting' ? null : 'meeting')}
+            >
+              Set meeting point
+            </button>
+          <div className="profile-controls">
+            <label htmlFor="profile-select"></label>
+            <select
+              id="profile-select"
+              value={activeProfileId}
+              onChange={(e) => switchProfile(e.target.value)}
+            >
+              {profiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name}
+                </option>
+              ))}
+            </select>
+          </div>
+            <div className="profile-menu-container">
+              <button
+                type="button"
+                className="mode-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowProfileMenu(!showProfileMenu);
+                }}
+              >
+                More ▼
+              </button>
+              {showProfileMenu && (
+                <div className="profile-menu">
+                  <button type="button" className="profile-menu-item" onClick={createNewProfile}>
+                    New view
+                  </button>                  <button type="button" className="profile-menu-item" onClick={cloneProfile}>
+                    Duplicate Current View
+                  </button>
+                  <button type="button" className="profile-menu-item" onClick={renameProfile}>
+                    Rename view
+                  </button>
+                  {profiles.length > 1 && (
+                    <button type="button" className="profile-menu-item" onClick={deleteProfile}>
+                      Delete view
+                    </button>
+                  )}
+                  {hasMeeting && (
+                    <button type="button" className="profile-menu-item" onClick={clearMeeting}>
+                      Clear meeting point
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
         </div>
       </header>
 

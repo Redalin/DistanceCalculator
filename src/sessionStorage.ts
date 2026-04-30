@@ -1,8 +1,17 @@
 const SESSION_KEY = 'distance-calculator-session';
 const THEME_KEY = 'distance-calculator-theme';
 const FAVOURITES_KEY = 'distance-calculator-favourites';
+const PROFILES_KEY = 'distance-calculator-profiles';
+const ACTIVE_PROFILE_KEY = 'distance-calculator-active-profile';
 
 export type StoredFavourite = { id: string; name: string; position: [number, number] };
+export type StoredPerson = { id: string; name: string; position: [number, number] };
+export type StoredProfile = {
+  id: string;
+  name: string;
+  people: StoredPerson[];
+  meetingPoint: [number, number] | null;
+};
 const MAX_FAVOURITES = 9;
 
 function isValidFavourite(x: unknown): x is StoredFavourite {
@@ -35,7 +44,44 @@ export function saveFavourites(favourites: StoredFavourite[]): void {
   }
 }
 
-export type StoredPerson = { id: string; name: string; position: [number, number] };
+export function loadProfiles(): StoredProfile[] {
+  try {
+    const raw = localStorage.getItem(PROFILES_KEY);
+    if (!raw) return [];
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data)) return [];
+    return data.filter(isValidProfile);
+  } catch {
+    return [];
+  }
+}
+
+export function saveProfiles(profiles: StoredProfile[]): void {
+  try {
+    localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles));
+  } catch {
+    // ignore
+  }
+}
+
+export function loadActiveProfileId(): string | null {
+  try {
+    const value = localStorage.getItem(ACTIVE_PROFILE_KEY);
+    if (typeof value === 'string' && value.trim().length > 0) return value;
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+export function saveActiveProfileId(id: string): void {
+  try {
+    localStorage.setItem(ACTIVE_PROFILE_KEY, id);
+  } catch {
+    // ignore
+  }
+}
+
 export type StoredSession = {
   people: StoredPerson[];
   meetingPoint: [number, number] | null;
@@ -61,6 +107,18 @@ function isValidPerson(p: unknown): p is StoredPerson {
     typeof (p as StoredPerson).id === 'string' &&
     typeof (p as StoredPerson).name === 'string' &&
     isValidLatLng((p as StoredPerson).position)
+  );
+}
+
+function isValidProfile(p: unknown): p is StoredProfile {
+  return (
+    typeof p === 'object' &&
+    p !== null &&
+    typeof (p as StoredProfile).id === 'string' &&
+    typeof (p as StoredProfile).name === 'string' &&
+    Array.isArray((p as StoredProfile).people) &&
+    (p as StoredProfile).people.every(isValidPerson) &&
+    (((p as StoredProfile).meetingPoint === null) || isValidLatLng((p as StoredProfile).meetingPoint))
   );
 }
 
