@@ -651,8 +651,8 @@ export default function App() {
   }, []);
 
   const setMeetingFromFavourite = useCallback((position: LatLng) => {
-    setMeetingPoint([...position]);
-  }, []);
+    saveActiveProfile((profile) => ({ ...profile, meetingPoint: [...position] }));
+  }, [saveActiveProfile]);
 
   const hasMeeting = meetingPoint !== null;
   // const canCalculate = hasMeeting && people.length > 0;
