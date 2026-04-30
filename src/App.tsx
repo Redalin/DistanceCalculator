@@ -167,6 +167,105 @@ function MapClickHandler({
   return null;
 }
 
+type AddressSearchTarget = { personId: string | null; mode: 'add' | 'move' | 'meeting' };
+
+type SearchResult = {
+  place_id: number;
+  display_name: string;
+  lat: string;
+  lon: string;
+};
+
+function AddressSearchModal({
+  open,
+  target,
+  query,
+  results,
+  loading,
+  error,
+  onQueryChange,
+  onSearch,
+  onSelect,
+  onClose,
+}: {
+  open: boolean;
+  target: AddressSearchTarget | null;
+  query: string;
+  results: SearchResult[];
+  loading: boolean;
+  error: string | null;
+  onQueryChange: (value: string) => void;
+  onSearch: () => void;
+  onSelect: (result: SearchResult) => void;
+  onClose: () => void;
+}) {
+  if (!open || !target) return null;
+
+  const title =
+    target.mode === 'add'
+      ? 'Add person by address'
+      : target.mode === 'meeting'
+      ? 'Set meeting point by address'
+      : 'Move person by address';
+
+  return (
+    <div className="address-search-modal-backdrop" onClick={onClose}>
+      <div className="address-search-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="address-search-modal-header">
+          <h2>{title}</h2>
+          <button type="button" className="mode-btn" onClick={onClose}>
+            Close
+          </button>
+        </div>
+        <div className="address-search-modal-body">
+          <form
+            className="address-search-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              onSearch();
+            }}
+          >
+            <input
+              type="search"
+              value={query}
+              placeholder="Search for an address..."
+              onChange={(e) => onQueryChange(e.target.value)}
+            />
+            <button type="submit" className="mode-btn primary" disabled={!query.trim()}>
+              Search
+            </button>
+          </form>
+          {loading && <p>Searching for addresses…</p>}
+          {error && <p className="address-search-error">{error}</p>}
+          {results.length > 0 && (
+            <ul className="address-search-results">
+              {results.map((result) => (
+                <li key={result.place_id}>
+                  <button
+                    type="button"
+                    className="address-search-item"
+                    onClick={() => onSelect(result)}
+                  >
+                    <strong>{result.display_name}</strong>
+                    <span>
+                      {result.lat}, {result.lon}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {!loading && !error && results.length === 0 && query.trim() && (
+            <p style={{ color: 'var(--muted)' }}>
+              No results found. Try a different address.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function initialSession(): { people: Person[]; meetingPoint: LatLng | null } {
   const s = loadSession();
   if (!s) return { people: [], meetingPoint: null };
@@ -186,6 +285,11 @@ export default function App() {
   const [routeGeometries, setRouteGeometries] = useState<[number, number][][]>([]);
   const [favourites, setFavourites] = useState<StoredFavourite[]>(() => loadFavourites());
   const [showPanel, setShowPanel] = useState(true);
+  const [addressSearchTarget, setAddressSearchTarget] = useState<AddressSearchTarget | null>(null);
+  const [addressSearchQuery, setAddressSearchQuery] = useState('');
+  const [addressSearchResults, setAddressSearchResults] = useState<SearchResult[]>([]);
+  const [addressSearchLoading, setAddressSearchLoading] = useState(false);
+  const [addressSearchError, setAddressSearchError] = useState<string | null>(null);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -231,6 +335,73 @@ export default function App() {
   const moveMeetingPoint = useCallback((lat: number, lng: number) => {
     setMeetingPoint([lat, lng]);
   }, []);
+
+  const openAddressSearchForNewPerson = useCallback(() => {
+    setMode('person');
+    setAddressSearchTarget({ personId: null, mode: 'add' });
+    setAddressSearchQuery('');
+    setAddressSearchResults([]);
+    setAddressSearchError(null);
+  }, []);
+
+  const openAddressSearchForPerson = useCallback((id: string) => {
+    setAddressSearchTarget({ personId: id, mode: 'move' });
+    setAddressSearchQuery('');
+    setAddressSearchResults([]);
+    setAddressSearchError(null);
+  }, []);
+
+  const openAddressSearchForMeeting = useCallback(() => {
+    setMode('meeting');
+    setAddressSearchTarget({ personId: null, mode: 'meeting' });
+    setAddressSearchQuery('');
+    setAddressSearchResults([]);
+    setAddressSearchError(null);
+  }, []);
+
+  const closeAddressSearch = useCallback(() => {
+    setAddressSearchTarget(null);
+    setAddressSearchQuery('');
+    setAddressSearchResults([]);
+    setAddressSearchError(null);
+  }, []);
+
+  const performAddressSearch = useCallback(async () => {
+    const query = addressSearchQuery.trim();
+    if (!query) return;
+    setAddressSearchLoading(true);
+    setAddressSearchError(null);
+    setAddressSearchResults([]);
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&limit=6&q=${encodeURIComponent(query)}`
+      );
+      if (!res.ok) throw new Error('Search failed');
+      const data = (await res.json()) as SearchResult[];
+      setAddressSearchResults(data || []);
+    } catch (err) {
+      console.error(err);
+      setAddressSearchError('Unable to search addresses. Please try again.');
+    } finally {
+      setAddressSearchLoading(false);
+    }
+  }, [addressSearchQuery]);
+
+  const handleAddressSelect = useCallback(
+    (result: SearchResult) => {
+      const lat = Number(result.lat);
+      const lng = Number(result.lon);
+      if (addressSearchTarget?.mode === 'add') {
+        addPerson(lat, lng);
+      } else if (addressSearchTarget?.mode === 'meeting') {
+        setMeetingPoint([lat, lng]);
+      } else if (addressSearchTarget?.personId) {
+        movePerson(addressSearchTarget.personId, lat, lng);
+      }
+      closeAddressSearch();
+    },
+    [addressSearchTarget, addPerson, movePerson, closeAddressSearch]
+  );
 
   const routeCache = useRef<
     Map<string, { routes: { personId: string; distance: number; duration: number }[]; routeGeometries: [number, number][][] }>
@@ -392,6 +563,40 @@ export default function App() {
         </div>
       </header>
 
+      {mode === 'person' && (
+        <div className="address-search-note">
+          <p style={{ margin: 0, color: 'var(--muted)' }}>
+            Click on the map to place a person, or search for an address.
+          </p>
+          <button type="button" className="mode-btn" onClick={openAddressSearchForNewPerson}>
+            Search address
+          </button>
+        </div>
+      )}
+      {mode === 'meeting' && (
+        <div className="address-search-note">
+          <p style={{ margin: 0, color: 'var(--muted)' }}>
+            Click on the map to place the meeting point, or search for an address.
+          </p>
+          <button type="button" className="mode-btn" onClick={openAddressSearchForMeeting}>
+            Search address
+          </button>
+        </div>
+      )}
+
+      <AddressSearchModal
+        open={Boolean(addressSearchTarget)}
+        target={addressSearchTarget}
+        query={addressSearchQuery}
+        results={addressSearchResults}
+        loading={addressSearchLoading}
+        error={addressSearchError}
+        onQueryChange={setAddressSearchQuery}
+        onSearch={performAddressSearch}
+        onSelect={handleAddressSelect}
+        onClose={closeAddressSearch}
+      />
+
       <div className={`main-content ${showPanel ? '' : 'panel-hidden'}`}>
         <DistancePanel
           people={people}
@@ -456,6 +661,10 @@ export default function App() {
                     <br />
                     <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Drag to move</span>
                     <br />
+                    <button type="button" onClick={() => openAddressSearchForPerson(p.id)}>
+                      Search address
+                    </button>
+                    <br />
                     <button type="button" onClick={() => removePerson(p.id)}>
                       Remove
                     </button>
@@ -479,6 +688,10 @@ export default function App() {
                   Meeting point
                   <br />
                   <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Drag to move</span>
+                  <br />
+                  <button type="button" onClick={openAddressSearchForMeeting}>
+                    Search address
+                  </button>
                 </Popup>
               </Marker>
             )}

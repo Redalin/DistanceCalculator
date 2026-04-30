@@ -275,7 +275,7 @@ export function DistancePanel({
       )}
       {people.length === 0 && (
         <p style={{ color: 'var(--muted)', fontSize: '0.875rem', margin: 0 }}>
-          Click &quot;Add person&quot; then click on the map to place people.
+          Click &quot;Add person&quot; then click on the map to place people, or search for an address.
         </p>
       )}
       {people.length > 0 && (
