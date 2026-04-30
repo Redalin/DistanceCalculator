@@ -675,6 +675,7 @@ export default function App() {
           <h1 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600, minWidth: 0 }}>
             Meeting Point Distance Calculator
           </h1>
+          <div className="app-header-actions" style={{ display: 'flex', flex: 1, minWidth: 0, gap: '10px', alignItems: 'center' }}>
             <button
               type="button"
               className="mode-btn"
@@ -739,6 +740,7 @@ export default function App() {
                 </div>
               )}
             </div>
+          </div>
         </div>
       </header>
 
