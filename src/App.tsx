@@ -655,10 +655,6 @@ export default function App() {
   }, [saveActiveProfile]);
 
   const hasMeeting = meetingPoint !== null;
-<<<<<<< Updated upstream
-  // const canCalculate = hasMeeting && people.length > 0;
-=======
->>>>>>> Stashed changes
   const tileUrl = TILE_URLS[theme];
 
   return (
