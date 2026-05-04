@@ -3,7 +3,7 @@ services:
     restart: unless-stopped
     build: .
     ports:
-      - "3050:3050"
+      - "3000:3050"
     environment:
       - PORT=3050
       # OSRM_URL=https://router.project-osrm.org
