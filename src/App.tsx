@@ -655,7 +655,6 @@ export default function App() {
   }, [saveActiveProfile]);
 
   const hasMeeting = meetingPoint !== null;
-  // const canCalculate = hasMeeting && people.length > 0;
   const tileUrl = TILE_URLS[theme];
 
   return (
