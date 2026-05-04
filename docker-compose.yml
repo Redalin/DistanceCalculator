@@ -8,6 +8,7 @@ services:
       - PORT=3050
       # OSRM_URL=https://router.project-osrm.org
       # Optional: use your own OSRM instance
+<<<<<<< Updated upstream
       - OSRM_URL=http://osrm:5000
     networks:
       # Rename to use the shared network to connect to the local OSRM service
@@ -17,3 +18,12 @@ services:
 networks:
   osrm-shared-net:
     external: true
+=======
+      # - OSRM_URL=http://your-osrm:5000
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:3000', res => { process.exit(res.statusCode === 200 ? 0 : 1); }).on('error', () => process.exit(1));\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+>>>>>>> Stashed changes
