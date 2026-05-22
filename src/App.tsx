@@ -524,8 +524,8 @@ export default function App() {
       .join(';');
     const cached = routeCache.current.get(coordsKey);
     
-    let currentRoutes: RouteEntry[] = [];
-    let currentGeometries: RouteGeometry[] = [];
+    let currentRoutes: RouteEntry[];
+    let currentGeometries: RouteGeometry[];
     
     setLoading(true);
     try {
@@ -732,7 +732,7 @@ export default function App() {
     setProfiles((prev) => [...prev, profile]);
     setActiveProfileId(profile.id);
     clearCalculatedRoutes();
-  }, [activeProfile, activeProfile.name, clearCalculatedRoutes]);
+  }, [activeProfile, clearCalculatedRoutes]);
 
   const renameProfile = useCallback(() => {
     const name = window.prompt('Rename profile', activeProfile.name)?.trim();

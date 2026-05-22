@@ -22,7 +22,7 @@ async function fetchPreferIPv4Json(rawUrl, timeoutMs = 15000) {
   try {
     const r = await dnsPromises.lookup(host, { all: true, family: 4 });
     addresses = r.map((x) => x.address);
-  } catch (e) {
+  } catch {
     // ignore and fall back to system resolver
   }
   // Prefer the first IPv4 address if available; otherwise use the hostname.
@@ -87,7 +87,7 @@ async function checkOsrmReachable(timeoutMs = 3000) {
     try {
       const r = await dnsPromises.lookup(host, { family: 4 });
       addr = r.address;
-    } catch (e) {
+    } catch {
       addr = host;
     }
 
@@ -102,7 +102,7 @@ async function checkOsrmReachable(timeoutMs = 3000) {
         resolve(false);
       });
     });
-  } catch (e) {
+    } catch {
     return false;
   }
 }
@@ -116,7 +116,7 @@ const OSRM_BASE = process.env.OSRM_URL || 'https://router.project-osrm.org';
 // Prefer IPv4 address order to avoid IPv6 resolution/connect issues in some hosts
 try {
   if (dns.setDefaultResultOrder) dns.setDefaultResultOrder('ipv4first');
-} catch (e) {
+} catch {
   // ignore if not supported
 }
 
