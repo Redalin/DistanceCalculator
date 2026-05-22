@@ -20,7 +20,7 @@ import {
 } from './sessionStorage';
 import { getPersonColor } from './colors';
 import './App.css';
-import type { LatLng } from './types';
+import type { CarpoolLeg, LatLng, RouteEntry, RouteGeometry } from './types';
 
 function createPersonIcon(color: string) {
   return L.divIcon({
@@ -309,9 +309,9 @@ export default function App() {
   const meetingPoint = activeProfile.meetingPoint;
   const [theme, setTheme] = useState<Theme>(() => loadTheme());
   const [mode, setMode] = useState<'person' | 'meeting' | null>(null);
-  const [routes, setRoutes] = useState<{ personId: string; distance: number; duration: number }[]>([]);
+  const [routes, setRoutes] = useState<RouteEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [routeGeometries, setRouteGeometries] = useState<[number, number][][]>([]);
+  const [routeGeometries, setRouteGeometries] = useState<RouteGeometry[]>([]);
   const [favourites, setFavourites] = useState<StoredFavourite[]>(() => loadFavourites());
   const [showPanel, setShowPanel] = useState(true);
   const [addressSearchTarget, setAddressSearchTarget] = useState<AddressSearchTarget | null>(null);
@@ -321,8 +321,20 @@ export default function App() {
   const [addressSearchError, setAddressSearchError] = useState<string | null>(null);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [carpoolHostId, setCarpoolHostId] = useState<string | null>(null);
-  const [carpoolLegs, setCarpoolLegs] = useState<{ passengerId: string; distance: number; duration: number }[]>([]);
-  const [carpoolPassengerGeometries, setCarpoolPassengerGeometries] = useState<Record<string, [number, number][]>>({});
+  const [carpoolLegs, setCarpoolLegs] = useState<CarpoolLeg[]>([]);
+  const [carpoolPassengerGeometries, setCarpoolPassengerGeometries] = useState<Record<string, RouteGeometry>>({});
+
+  const clearCarpoolState = useCallback(() => {
+    setCarpoolHostId(null);
+    setCarpoolLegs([]);
+    setCarpoolPassengerGeometries({});
+  }, []);
+
+  const clearCalculatedRoutes = useCallback(() => {
+    setRoutes([]);
+    setRouteGeometries([]);
+    clearCarpoolState();
+  }, [clearCarpoolState]);
 
   const saveActiveProfile = useCallback(
     (updater: (profile: StoredProfile) => StoredProfile) => {
@@ -399,13 +411,9 @@ export default function App() {
         ...profile,
         people: profile.people.filter((x) => x.id !== id),
       }));
-      setRoutes((r) => r.filter((x) => x.personId !== id));
-      setRouteGeometries([]);
-      setCarpoolHostId(null);
-      setCarpoolLegs([]);
-      setCarpoolPassengerGeometries({});
+      clearCalculatedRoutes();
     },
-    [saveActiveProfile]
+    [saveActiveProfile, clearCalculatedRoutes]
   );
 
   const updatePersonName = useCallback(
@@ -499,13 +507,13 @@ export default function App() {
       }
       closeAddressSearch();
     },
-    [addressSearchTarget, addPerson, movePerson, closeAddressSearch]
+    [addressSearchTarget, addPerson, setMeeting, movePerson, closeAddressSearch]
   );
 
   const routeCache = useRef<
-    Map<string, { routes: { personId: string; distance: number; duration: number }[]; routeGeometries: [number, number][][] }>
+    Map<string, { routes: RouteEntry[]; routeGeometries: RouteGeometry[] }>
   >(new Map());
-  const segmentCache = useRef<Map<string, [number, number][]>>(new Map());
+  const segmentCache = useRef<Map<string, RouteGeometry>>(new Map());
   const MAX_CACHE_SIZE = 30;
   const MAX_SEGMENT_CACHE = 100;
 
@@ -516,8 +524,8 @@ export default function App() {
       .join(';');
     const cached = routeCache.current.get(coordsKey);
     
-    let currentRoutes = [];
-    let currentGeometries = [];
+    let currentRoutes: RouteEntry[] = [];
+    let currentGeometries: RouteGeometry[] = [];
     
     setLoading(true);
     try {
@@ -541,7 +549,7 @@ export default function App() {
           duration: durations[i][0],
         }));
         setRoutes(currentRoutes);
-        const geoms: [number, number][][] = [];
+        const geoms: RouteGeometry[] = [];
         for (let i = 0; i < people.length; i++) {
           const coordStr = `${people[i].position[1]},${people[i].position[0]};${meetingPoint[1]},${meetingPoint[0]}`;
           const segCached = segmentCache.current.get(coordStr);
@@ -552,7 +560,7 @@ export default function App() {
             if (r.ok) {
               const routeData = await r.json();
               const coords = routeData.routes?.[0]?.geometry?.coordinates;
-              const geom = coords ? (coords.map((c: number[]) => [c[1], c[0]]) as [number, number][]) : [];
+              const geom = coords ? (coords.map((c: number[]) => [c[1], c[0]]) as RouteGeometry) : [];
               geoms.push(geom);
               if (segmentCache.current.size >= MAX_SEGMENT_CACHE) {
                 const firstKey = segmentCache.current.keys().next().value;
@@ -613,8 +621,8 @@ export default function App() {
           setCarpoolHostId(bestHost.id);
           
           // Construct driving legs for passengers
-          const legs: { passengerId: string; distance: number; duration: number }[] = [];
-          const passengerGeometries: Record<string, [number, number][]> = {};
+          const legs: CarpoolLeg[] = [];
+          const passengerGeometries: Record<string, RouteGeometry> = {};
           
           for (let c = 0; c < carpoolers.length; c++) {
             if (c === bestHostIndex) continue;
@@ -638,7 +646,7 @@ export default function App() {
               if (r.ok) {
                 const routeData = await r.json();
                 const coords = routeData.routes?.[0]?.geometry?.coordinates;
-                const geom = coords ? (coords.map((c: number[]) => [c[1], c[0]]) as [number, number][]) : [];
+                const geom = coords ? (coords.map((c: number[]) => [c[1], c[0]]) as RouteGeometry) : [];
                 passengerGeometries[passenger.id] = geom;
                 if (segmentCache.current.size >= MAX_SEGMENT_CACHE) {
                   const firstKey = segmentCache.current.keys().next().value;
@@ -654,21 +662,17 @@ export default function App() {
           setCarpoolLegs(legs);
           setCarpoolPassengerGeometries(passengerGeometries);
         } else {
-          setCarpoolHostId(null);
-          setCarpoolLegs([]);
-          setCarpoolPassengerGeometries({});
+          clearCarpoolState();
         }
       } else {
-        setCarpoolHostId(null);
-        setCarpoolLegs([]);
-        setCarpoolPassengerGeometries({});
+        clearCarpoolState();
       }
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
-  }, [meetingPoint, people]);
+  }, [meetingPoint, people, clearCarpoolState]);
 
   // Auto-recalculate when people or meeting point change (add, move, or meeting move)
   useEffect(() => {
@@ -679,21 +683,13 @@ export default function App() {
 
   const clearMeeting = useCallback(() => {
     saveActiveProfile((profile) => ({ ...profile, meetingPoint: null }));
-    setRoutes([]);
-    setRouteGeometries([]);
-    setCarpoolHostId(null);
-    setCarpoolLegs([]);
-    setCarpoolPassengerGeometries({});
-  }, [saveActiveProfile]);
+    clearCalculatedRoutes();
+  }, [saveActiveProfile, clearCalculatedRoutes]);
 
   const clearAllPeople = useCallback(() => {
     saveActiveProfile((profile) => ({ ...profile, people: [] }));
-    setRoutes([]);
-    setRouteGeometries([]);
-    setCarpoolHostId(null);
-    setCarpoolLegs([]);
-    setCarpoolPassengerGeometries({});
-  }, [saveActiveProfile]);
+    clearCalculatedRoutes();
+  }, [saveActiveProfile, clearCalculatedRoutes]);
 
   const toggleTheme = useCallback(() => {
     setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
@@ -721,9 +717,8 @@ export default function App() {
     };
     setProfiles((prev) => [...prev, profile]);
     setActiveProfileId(profile.id);
-    setRoutes([]);
-    setRouteGeometries([]);
-  }, [profiles.length]);
+    clearCalculatedRoutes();
+  }, [profiles.length, clearCalculatedRoutes]);
 
   const cloneProfile = useCallback(() => {
     const name = window.prompt('Clone profile name', `${activeProfile.name} copy`)?.trim();
@@ -736,9 +731,8 @@ export default function App() {
     };
     setProfiles((prev) => [...prev, profile]);
     setActiveProfileId(profile.id);
-    setRoutes([]);
-    setRouteGeometries([]);
-  }, [activeProfile, activeProfile.name]);
+    clearCalculatedRoutes();
+  }, [activeProfile, activeProfile.name, clearCalculatedRoutes]);
 
   const renameProfile = useCallback(() => {
     const name = window.prompt('Rename profile', activeProfile.name)?.trim();
@@ -754,23 +748,15 @@ export default function App() {
      if (profiles.length <= 1) return;
      if (!window.confirm(`Delete profile “${activeProfile.name}”?`)) return;
      setProfiles((prev) => prev.filter((profile) => profile.id !== activeProfileId));
-     setRoutes([]);
-     setRouteGeometries([]);
-     setCarpoolHostId(null);
-     setCarpoolLegs([]);
-     setCarpoolPassengerGeometries({});
+     clearCalculatedRoutes();
      const remaining = profiles.filter((profile) => profile.id !== activeProfileId);
      setActiveProfileId(remaining[0].id);
-   }, [activeProfile.name, activeProfileId, profiles]);
+   }, [activeProfile.name, activeProfileId, profiles, clearCalculatedRoutes]);
  
    const switchProfile = useCallback((id: string) => {
      setActiveProfileId(id);
-     setRoutes([]);
-     setRouteGeometries([]);
-     setCarpoolHostId(null);
-     setCarpoolLegs([]);
-     setCarpoolPassengerGeometries({});
-   }, []);
+     clearCalculatedRoutes();
+   }, [clearCalculatedRoutes]);
 
   const removeFavourite = useCallback((id: string) => {
     setFavourites((prev) => prev.filter((f) => f.id !== id));

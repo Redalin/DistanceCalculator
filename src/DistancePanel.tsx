@@ -1,25 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import type { Person } from './App';
 import { getPersonColor } from './colors';
-import type { LatLng } from './types';
+import { formatDuration, formatKm } from './format';
+import type { CarpoolLeg, LatLng, RouteEntry } from './types';
 import type { StoredFavourite } from './sessionStorage';
-
-type RouteEntry = { personId: string; distance: number; duration: number };
-
-function formatKm(km: number): string {
-  if (km >= 1) return `${km.toFixed(1)} km`;
-  return `${Math.round(km * 1000)} m`;
-}
-
-function formatDuration(seconds: number): string {
-  const totalMinutes = Math.ceil(seconds / 60);
-  if (totalMinutes >= 60) {
-    const h = Math.floor(totalMinutes / 60);
-    const min = totalMinutes % 60;
-    return min ? `${h}h ${min}m` : `${h}h`;
-  }
-  return `${totalMinutes}m`;
-}
 
 const MAX_FAVOURITES = 9;
 
@@ -54,7 +38,7 @@ export function DistancePanel({
   onTogglePanel?: () => void;
   onToggleCarpool: (id: string) => void;
   carpoolHostId?: string | null;
-  carpoolLegs?: { passengerId: string; distance: number; duration: number }[];
+  carpoolLegs?: CarpoolLeg[];
 }) {
   const [sortByDistance, setSortByDistance] = useState(false);
   const [width, setWidth] = useState(250);
@@ -321,7 +305,7 @@ export function DistancePanel({
       )}
       {!meetingPoint && (
         <p style={{ color: 'var(--muted)', fontSize: '0.875rem', margin: 0 }}>
-          Set a meeting point on the map, then click &quot;Calculate distances&quot;.
+          Set a meeting point on the map to calculate distances automatically.
         </p>
       )}
       {people.length === 0 && (
