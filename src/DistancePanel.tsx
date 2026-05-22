@@ -36,6 +36,9 @@ export function DistancePanel({
   onClearAllPeople,
   showPanel,
   onTogglePanel,
+  onToggleCarpool,
+  carpoolHostId,
+  carpoolLegs,
 }: {
   people: Person[];
   routes: RouteEntry[];
@@ -49,6 +52,9 @@ export function DistancePanel({
   onClearAllPeople?: () => void;
   showPanel?: boolean;
   onTogglePanel?: () => void;
+  onToggleCarpool: (id: string) => void;
+  carpoolHostId?: string | null;
+  carpoolLegs?: { passengerId: string; distance: number; duration: number }[];
 }) {
   const [sortByDistance, setSortByDistance] = useState(false);
   const [width, setWidth] = useState(250);
@@ -108,6 +114,25 @@ export function DistancePanel({
   // const longestDuration = routes.length
   //   ? routes.reduce((a, b) => (b.duration > a.duration ? b : a))
   //   : null;
+
+  const carpoolers = people.filter((p) => p.carpool);
+  const hasCarpool = Boolean(carpoolHostId && carpoolers.length >= 2);
+
+  let totalSavedDistance = 0;
+  let hostName = '';
+  if (hasCarpool) {
+    const host = carpoolers.find((p) => p.id === carpoolHostId);
+    hostName = host ? host.name : 'Unknown';
+
+    carpoolers.forEach((p) => {
+      if (p.id === carpoolHostId) return;
+      const soloRoute = routes.find((r) => r.personId === p.id);
+      const passengerLeg = carpoolLegs?.find((l) => l.passengerId === p.id);
+      if (soloRoute && passengerLeg) {
+        totalSavedDistance += (soloRoute.distance - passengerLeg.distance);
+      }
+    });
+  }
 
   const displayPeople =
     sortByDistance && routes.length > 0
@@ -268,6 +293,32 @@ export function DistancePanel({
           </div>
         )}
       </div>
+      {hasCarpool && (
+        <div
+          className="carpool-opt-card"
+          style={{
+            background: 'linear-gradient(135deg, var(--surface) 0%, rgba(88, 166, 255, 0.08) 100%)',
+            border: '1px solid var(--accent)',
+            borderRadius: '8px',
+            padding: '12px',
+            marginBottom: '16px',
+            boxShadow: '0 4px 12px rgba(88, 166, 255, 0.1)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <span style={{ fontSize: '1.2rem' }} aria-hidden>🚗</span>
+            <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 600, color: 'var(--accent)' }}>
+              Carpool Optimization
+            </h3>
+          </div>
+          <p style={{ margin: '0 0 6px', fontSize: '0.85rem', color: 'var(--text)' }}>
+            Recommended meetup: meet at <strong style={{ color: 'var(--accent)' }}>{hostName}</strong>
+          </p>
+          <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
+            Total driving saved: <strong style={{ color: 'var(--green)' }}>{formatKm(totalSavedDistance)}</strong>
+          </div>
+        </div>
+      )}
       {!meetingPoint && (
         <p style={{ color: 'var(--muted)', fontSize: '0.875rem', margin: 0 }}>
           Set a meeting point on the map, then click &quot;Calculate distances&quot;.
@@ -358,35 +409,119 @@ export function DistancePanel({
                       color: 'var(--text)',
                       fontSize: '0.95rem',
                       fontWeight: 600,
+                      minWidth: 0,
                     }}
                   />
                 </div>
-                {route && (
-                  <>
-                    <div
-                      style={{
-                        height: '6px',
-                        borderRadius: '3px',
-                        background: 'var(--border)',
-                        overflow: 'hidden',
-                        marginBottom: '6px',
-                      }}
-                    >
-                      <div
-                        style={{
-                          height: '100%',
-                          width: `${progressPercent}%`,
-                          borderRadius: '3px',
-                          background: color,
-                          minWidth: progressPercent > 0 ? '4px' : 0,
-                        }}
-                      />
-                    </div>
-                    <div style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
-                      {formatKm(route.distance)} · ~{formatDuration(route.duration)} drive
-                    </div>
-                  </>
-                )}
+                <div style={{ display: 'flex', alignItems: 'center', margin: '6px 0' }}>
+                  <button
+                    type="button"
+                    onClick={() => onToggleCarpool(p.id)}
+                    title={p.carpool ? 'Remove from carpool group' : 'Add to carpool group'}
+                    style={{
+                      background: p.carpool ? 'var(--accent-dim)' : 'var(--surface)',
+                      border: '1px solid ' + (p.carpool ? 'var(--accent)' : 'var(--border)'),
+                      borderRadius: '12px',
+                      padding: '3px 8px',
+                      fontSize: '0.72rem',
+                      fontWeight: 500,
+                      color: p.carpool ? 'var(--accent)' : 'var(--muted)',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                      <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.85 7h10.29l1.04 3H5.81l1.04-3zM19 17H5v-5h14v5z"/>
+                      <circle cx="7.5" cy="14.5" r="1.5"/>
+                      <circle cx="16.5" cy="14.5" r="1.5"/>
+                    </svg>
+                    {p.carpool ? 'Carpooling' : 'Enable Carpool'}
+                  </button>
+                </div>
+                {route && (() => {
+                  const isCarpoolActive = carpoolHostId && carpoolers.length >= 2;
+                  const isCarpool = isCarpoolActive && p.carpool;
+                  const isHost = isCarpool && p.id === carpoolHostId;
+                  const isPassenger = isCarpool && p.id !== carpoolHostId;
+                  const passengerLeg = isPassenger ? carpoolLegs?.find((l) => l.passengerId === p.id) : null;
+
+                  if (isPassenger && passengerLeg) {
+                    const savedDist = route.distance - passengerLeg.distance;
+                    return (
+                      <div style={{ marginTop: '6px' }}>
+                        <div style={{ fontSize: '0.82rem', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ color: 'var(--accent)', fontWeight: 600, background: 'rgba(88, 166, 255, 0.1)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem' }}>Passenger</span>
+                          <span>Drives <strong>{formatKm(passengerLeg.distance)}</strong> to driver</span>
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: savedDist >= 0 ? 'var(--green)' : 'var(--orange)', marginTop: '2px', fontWeight: 500 }}>
+                          {savedDist >= 0 ? `Saved ${formatKm(savedDist)} of driving!` : `Drives ${formatKm(Math.abs(savedDist))} extra`}
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (isHost) {
+                     return (
+                       <>
+                         <div
+                           style={{
+                             height: '6px',
+                             borderRadius: '3px',
+                             background: 'var(--border)',
+                             overflow: 'hidden',
+                             marginBottom: '6px',
+                             marginTop: '6px'
+                           }}
+                         >
+                           <div
+                             style={{
+                               height: '100%',
+                               width: `${progressPercent}%`,
+                               borderRadius: '3px',
+                               background: color,
+                               minWidth: progressPercent > 0 ? '4px' : 0,
+                             }}
+                           />
+                         </div>
+                         <div style={{ fontSize: '0.85rem', color: 'var(--muted)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px' }}>
+                           <span style={{ color: 'var(--green)', fontWeight: 600, background: 'rgba(63, 185, 80, 0.1)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem' }}>Driver / Host</span>
+                           <span>{formatKm(route.distance)} · ~{formatDuration(route.duration)} drive</span>
+                         </div>
+                       </>
+                     );
+                  }
+
+                  return (
+                     <>
+                       <div
+                         style={{
+                           height: '6px',
+                           borderRadius: '3px',
+                           background: 'var(--border)',
+                           overflow: 'hidden',
+                           marginBottom: '6px',
+                           marginTop: '6px'
+                         }}
+                       >
+                         <div
+                           style={{
+                             height: '100%',
+                             width: `${progressPercent}%`,
+                             borderRadius: '3px',
+                             background: color,
+                             minWidth: progressPercent > 0 ? '4px' : 0,
+                           }}
+                         />
+                       </div>
+                       <div style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
+                         {formatKm(route.distance)} · ~{formatDuration(route.duration)} drive
+                       </div>
+                     </>
+                  );
+                })()}
               </li>
             );
           })}

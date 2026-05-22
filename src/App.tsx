@@ -38,7 +38,7 @@ const meetingIcon = new L.Icon({
   iconAnchor: [12, 41],
 });
 
-export type Person = { id: string; name: string; position: LatLng };
+export type Person = { id: string; name: string; position: LatLng; carpool?: boolean };
 
 const TILE_URLS: Record<Theme, string> = {
   dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
@@ -275,7 +275,7 @@ function initialSession(): { people: Person[]; meetingPoint: LatLng | null } {
   const s = loadSession();
   if (!s) return { people: [], meetingPoint: null };
   return {
-    people: s.people.map((p) => ({ id: p.id, name: p.name, position: p.position })),
+    people: s.people.map((p) => ({ id: p.id, name: p.name, position: p.position, carpool: p.carpool })),
     meetingPoint: s.meetingPoint,
   };
 }
@@ -320,6 +320,30 @@ export default function App() {
   const [addressSearchLoading, setAddressSearchLoading] = useState(false);
   const [addressSearchError, setAddressSearchError] = useState<string | null>(null);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [carpoolHostId, setCarpoolHostId] = useState<string | null>(null);
+  const [carpoolLegs, setCarpoolLegs] = useState<{ passengerId: string; distance: number; duration: number }[]>([]);
+  const [carpoolPassengerGeometries, setCarpoolPassengerGeometries] = useState<Record<string, [number, number][]>>({});
+
+  const saveActiveProfile = useCallback(
+    (updater: (profile: StoredProfile) => StoredProfile) => {
+      setProfiles((prev) =>
+        prev.map((profile) =>
+          profile.id === activeProfileId ? updater(profile) : profile
+        )
+      );
+    },
+    [activeProfileId]
+  );
+
+  const toggleCarpool = useCallback(
+    (id: string) => {
+      saveActiveProfile((profile) => ({
+        ...profile,
+        people: profile.people.map((p) => (p.id === id ? { ...p, carpool: !p.carpool } : p)),
+      }));
+    },
+    [saveActiveProfile]
+  );
 
   useEffect(() => {
     const handleClickOutside = () => setShowProfileMenu(false);
@@ -342,21 +366,10 @@ export default function App() {
     saveProfiles(profiles);
     saveActiveProfileId(activeProfileId);
     saveSession({
-      people: activeProfile.people.map((p) => ({ id: p.id, name: p.name, position: p.position })),
+      people: activeProfile.people.map((p) => ({ id: p.id, name: p.name, position: p.position, carpool: p.carpool })),
       meetingPoint: activeProfile.meetingPoint,
     });
   }, [profiles, activeProfileId, activeProfile]);
-
-  const saveActiveProfile = useCallback(
-    (updater: (profile: StoredProfile) => StoredProfile) => {
-      setProfiles((prev) =>
-        prev.map((profile) =>
-          profile.id === activeProfileId ? updater(profile) : profile
-        )
-      );
-    },
-    [activeProfileId]
-  );
 
   const addPerson = useCallback(
     (lat: number, lng: number) => {
@@ -388,6 +401,9 @@ export default function App() {
       }));
       setRoutes((r) => r.filter((x) => x.personId !== id));
       setRouteGeometries([]);
+      setCarpoolHostId(null);
+      setCarpoolLegs([]);
+      setCarpoolPassengerGeometries({});
     },
     [saveActiveProfile]
   );
@@ -499,56 +515,154 @@ export default function App() {
       .map(([lat, lng]) => `${lng},${lat}`)
       .join(';');
     const cached = routeCache.current.get(coordsKey);
-    if (cached) {
-      setRoutes(cached.routes);
-      setRouteGeometries(cached.routeGeometries);
-      return;
-    }
+    
+    let currentRoutes = [];
+    let currentGeometries = [];
+    
     setLoading(true);
-    setRoutes([]);
-    setRouteGeometries([]);
     try {
-      const res = await fetch(`/api/table?coords=${encodeURIComponent(coordsKey)}`);
-      if (!res.ok) throw new Error('Routing failed');
-      const data = await res.json();
-      const durations = data.durations as number[][];
-      const distances = data.distances as number[][];
-      if (!durations?.[0] || !distances?.[0]) throw new Error('Invalid response');
-      const routes = people.map((p, i) => ({
-        personId: p.id,
-        distance: distances[i][0] / 1000,
-        duration: durations[i][0],
-      }));
-      setRoutes(routes);
-      const geoms: [number, number][][] = [];
-      for (let i = 0; i < people.length; i++) {
-        const coordStr = `${people[i].position[1]},${people[i].position[0]};${meetingPoint[1]},${meetingPoint[0]}`;
-        const segCached = segmentCache.current.get(coordStr);
-        if (segCached) {
-          geoms.push(segCached);
-        } else {
-          const r = await fetch(`/api/route?coords=${encodeURIComponent(coordStr)}`);
-          if (r.ok) {
-            const routeData = await r.json();
-            const coords = routeData.routes?.[0]?.geometry?.coordinates;
-            const geom = coords ? (coords.map((c: number[]) => [c[1], c[0]]) as [number, number][]) : [];
-            geoms.push(geom);
-            if (segmentCache.current.size >= MAX_SEGMENT_CACHE) {
-              const firstKey = segmentCache.current.keys().next().value;
-              if (firstKey !== undefined) segmentCache.current.delete(firstKey);
-            }
-            segmentCache.current.set(coordStr, geom);
+      if (cached) {
+        currentRoutes = cached.routes;
+        currentGeometries = cached.routeGeometries;
+        setRoutes(currentRoutes);
+        setRouteGeometries(currentGeometries);
+      } else {
+        setRoutes([]);
+        setRouteGeometries([]);
+        const res = await fetch(`/api/table?coords=${encodeURIComponent(coordsKey)}`);
+        if (!res.ok) throw new Error('Routing failed');
+        const data = await res.json();
+        const durations = data.durations as number[][];
+        const distances = data.distances as number[][];
+        if (!durations?.[0] || !distances?.[0]) throw new Error('Invalid response');
+        currentRoutes = people.map((p, i) => ({
+          personId: p.id,
+          distance: distances[i][0] / 1000,
+          duration: durations[i][0],
+        }));
+        setRoutes(currentRoutes);
+        const geoms: [number, number][][] = [];
+        for (let i = 0; i < people.length; i++) {
+          const coordStr = `${people[i].position[1]},${people[i].position[0]};${meetingPoint[1]},${meetingPoint[0]}`;
+          const segCached = segmentCache.current.get(coordStr);
+          if (segCached) {
+            geoms.push(segCached);
           } else {
-            geoms.push([]);
+            const r = await fetch(`/api/route?coords=${encodeURIComponent(coordStr)}`);
+            if (r.ok) {
+              const routeData = await r.json();
+              const coords = routeData.routes?.[0]?.geometry?.coordinates;
+              const geom = coords ? (coords.map((c: number[]) => [c[1], c[0]]) as [number, number][]) : [];
+              geoms.push(geom);
+              if (segmentCache.current.size >= MAX_SEGMENT_CACHE) {
+                const firstKey = segmentCache.current.keys().next().value;
+                if (firstKey !== undefined) segmentCache.current.delete(firstKey);
+              }
+              segmentCache.current.set(coordStr, geom);
+            } else {
+              geoms.push([]);
+            }
           }
         }
+        currentGeometries = geoms;
+        setRouteGeometries(currentGeometries);
+        if (routeCache.current.size >= MAX_CACHE_SIZE) {
+          const firstKey = routeCache.current.keys().next().value;
+          if (firstKey !== undefined) routeCache.current.delete(firstKey);
+        }
+        routeCache.current.set(coordsKey, { routes: currentRoutes, routeGeometries: currentGeometries });
       }
-      setRouteGeometries(geoms);
-      if (routeCache.current.size >= MAX_CACHE_SIZE) {
-        const firstKey = routeCache.current.keys().next().value;
-        if (firstKey !== undefined) routeCache.current.delete(firstKey);
+
+      // Now process Carpooling calculations if there are >= 2 carpoolers
+      const carpoolers = people.filter((p) => p.carpool);
+      if (carpoolers.length >= 2) {
+        const carpoolCoordsKey = carpoolers
+          .map((p) => p.position)
+          .map(([lat, lng]) => `${lng},${lat}`)
+          .join(';');
+        
+        const carpoolRes = await fetch(`/api/table?all=true&coords=${encodeURIComponent(carpoolCoordsKey)}`);
+        if (!carpoolRes.ok) throw new Error('Carpool matrix routing failed');
+        const carpoolData = await carpoolRes.json();
+        const carpoolDistances = carpoolData.distances as number[][];
+        const carpoolDurations = carpoolData.durations as number[][];
+        
+        if (carpoolDistances && carpoolDurations) {
+          // Find the best host index (minimizes total driving distance)
+          let bestHostIndex = 0;
+          let minTotalDist = Infinity;
+          
+          for (let h = 0; h < carpoolers.length; h++) {
+            const hostId = carpoolers[h].id;
+            const hostSoloRoute = currentRoutes.find((r) => r.personId === hostId);
+            const hostSoloDist = hostSoloRoute ? hostSoloRoute.distance : 0;
+            
+            let currentHostTotal = hostSoloDist;
+            for (let c = 0; c < carpoolers.length; c++) {
+              if (c === h) continue;
+              currentHostTotal += carpoolDistances[c][h] / 1000;
+            }
+            
+            if (currentHostTotal < minTotalDist) {
+              minTotalDist = currentHostTotal;
+              bestHostIndex = h;
+            }
+          }
+          
+          const bestHost = carpoolers[bestHostIndex];
+          setCarpoolHostId(bestHost.id);
+          
+          // Construct driving legs for passengers
+          const legs: { passengerId: string; distance: number; duration: number }[] = [];
+          const passengerGeometries: Record<string, [number, number][]> = {};
+          
+          for (let c = 0; c < carpoolers.length; c++) {
+            if (c === bestHostIndex) continue;
+            const passenger = carpoolers[c];
+            const distToHost = carpoolDistances[c][bestHostIndex] / 1000;
+            const durToHost = carpoolDurations[c][bestHostIndex];
+            
+            legs.push({
+              passengerId: passenger.id,
+              distance: distToHost,
+              duration: durToHost,
+            });
+            
+            // Fetch passenger-to-host route geometry
+            const segmentKey = `${passenger.position[1]},${passenger.position[0]};${bestHost.position[1]},${bestHost.position[0]}`;
+            const segCached = segmentCache.current.get(segmentKey);
+            if (segCached) {
+              passengerGeometries[passenger.id] = segCached;
+            } else {
+              const r = await fetch(`/api/route?coords=${encodeURIComponent(segmentKey)}`);
+              if (r.ok) {
+                const routeData = await r.json();
+                const coords = routeData.routes?.[0]?.geometry?.coordinates;
+                const geom = coords ? (coords.map((c: number[]) => [c[1], c[0]]) as [number, number][]) : [];
+                passengerGeometries[passenger.id] = geom;
+                if (segmentCache.current.size >= MAX_SEGMENT_CACHE) {
+                  const firstKey = segmentCache.current.keys().next().value;
+                  if (firstKey !== undefined) segmentCache.current.delete(firstKey);
+                }
+                segmentCache.current.set(segmentKey, geom);
+              } else {
+                passengerGeometries[passenger.id] = [];
+              }
+            }
+          }
+          
+          setCarpoolLegs(legs);
+          setCarpoolPassengerGeometries(passengerGeometries);
+        } else {
+          setCarpoolHostId(null);
+          setCarpoolLegs([]);
+          setCarpoolPassengerGeometries({});
+        }
+      } else {
+        setCarpoolHostId(null);
+        setCarpoolLegs([]);
+        setCarpoolPassengerGeometries({});
       }
-      routeCache.current.set(coordsKey, { routes, routeGeometries: geoms });
     } catch (e) {
       console.error(e);
     } finally {
@@ -567,12 +681,18 @@ export default function App() {
     saveActiveProfile((profile) => ({ ...profile, meetingPoint: null }));
     setRoutes([]);
     setRouteGeometries([]);
+    setCarpoolHostId(null);
+    setCarpoolLegs([]);
+    setCarpoolPassengerGeometries({});
   }, [saveActiveProfile]);
 
   const clearAllPeople = useCallback(() => {
     saveActiveProfile((profile) => ({ ...profile, people: [] }));
     setRoutes([]);
     setRouteGeometries([]);
+    setCarpoolHostId(null);
+    setCarpoolLegs([]);
+    setCarpoolPassengerGeometries({});
   }, [saveActiveProfile]);
 
   const toggleTheme = useCallback(() => {
@@ -631,20 +751,26 @@ export default function App() {
   }, [activeProfile.name, activeProfileId]);
 
   const deleteProfile = useCallback(() => {
-    if (profiles.length <= 1) return;
-    if (!window.confirm(`Delete profile “${activeProfile.name}”?`)) return;
-    setProfiles((prev) => prev.filter((profile) => profile.id !== activeProfileId));
-    setRoutes([]);
-    setRouteGeometries([]);
-    const remaining = profiles.filter((profile) => profile.id !== activeProfileId);
-    setActiveProfileId(remaining[0].id);
-  }, [activeProfile.name, activeProfileId, profiles]);
-
-  const switchProfile = useCallback((id: string) => {
-    setActiveProfileId(id);
-    setRoutes([]);
-    setRouteGeometries([]);
-  }, []);
+     if (profiles.length <= 1) return;
+     if (!window.confirm(`Delete profile “${activeProfile.name}”?`)) return;
+     setProfiles((prev) => prev.filter((profile) => profile.id !== activeProfileId));
+     setRoutes([]);
+     setRouteGeometries([]);
+     setCarpoolHostId(null);
+     setCarpoolLegs([]);
+     setCarpoolPassengerGeometries({});
+     const remaining = profiles.filter((profile) => profile.id !== activeProfileId);
+     setActiveProfileId(remaining[0].id);
+   }, [activeProfile.name, activeProfileId, profiles]);
+ 
+   const switchProfile = useCallback((id: string) => {
+     setActiveProfileId(id);
+     setRoutes([]);
+     setRouteGeometries([]);
+     setCarpoolHostId(null);
+     setCarpoolLegs([]);
+     setCarpoolPassengerGeometries({});
+   }, []);
 
   const removeFavourite = useCallback((id: string) => {
     setFavourites((prev) => prev.filter((f) => f.id !== id));
@@ -791,6 +917,9 @@ export default function App() {
           onClearAllPeople={clearAllPeople}
           showPanel={showPanel}
           onTogglePanel={() => setShowPanel((s) => !s)}
+          onToggleCarpool={toggleCarpool}
+          carpoolHostId={carpoolHostId}
+          carpoolLegs={carpoolLegs}
         />
         <div className="map-wrapper">
           <MapContainer
@@ -817,6 +946,11 @@ export default function App() {
             <MapClickHandler onAddPerson={addPerson} onSetMeeting={setMeeting} mode={mode} />
             {people.map((p) => {
               const route = routes.find((r) => r.personId === p.id);
+              const isCarpool = carpoolHostId && p.carpool;
+              const isHost = isCarpool && p.id === carpoolHostId;
+              const isPassenger = isCarpool && p.id !== carpoolHostId;
+              const passengerLeg = isPassenger ? carpoolLegs.find(l => l.passengerId === p.id) : null;
+              
               return (
                 <Marker
                   key={p.id}
@@ -832,10 +966,21 @@ export default function App() {
                 >
                   <Popup>
                     <strong>{p.name}</strong>
-                    {route && (
+                    {isHost && <span style={{ color: 'var(--green)', fontSize: '0.8rem', display: 'block', fontWeight: 600 }}>🚗 Carpool Driver / Host</span>}
+                    {isPassenger && <span style={{ color: 'var(--accent)', fontSize: '0.8rem', display: 'block', fontWeight: 600 }}>👥 Carpool Passenger</span>}
+                    
+                    {route && !isPassenger && (
                       <>
                         <br />
                         Distance: {route.distance.toFixed(1)} km
+                      </>
+                    )}
+                    {isPassenger && passengerLeg && (
+                      <>
+                        <br />
+                        Drives to host: {passengerLeg.distance.toFixed(1)} km
+                        <br />
+                        Rides to meeting: {route ? route.distance.toFixed(1) : 0} km
                       </>
                     )}
                     <br />
@@ -875,19 +1020,50 @@ export default function App() {
                 </Popup>
               </Marker>
             )}
-            {routeGeometries.map(
-              (geom, i) =>
-                geom.length > 1 &&
-                people[i] && (
-                  <Polyline
-                    key={people[i].id}
-                    positions={geom}
-                    color={getPersonColor(people, people[i].id)}
-                    weight={3}
-                    opacity={0.8}
-                  />
-                )
-            )}
+            {routeGeometries.map((geom, i) => {
+              const person = people[i];
+              if (!geom || geom.length <= 1 || !person) return null;
+
+              if (carpoolHostId) {
+                if (person.carpool) {
+                  if (person.id === carpoolHostId) {
+                    return (
+                      <Polyline
+                        key={person.id}
+                        positions={geom}
+                        color={getPersonColor(people, person.id)}
+                        weight={6}
+                        opacity={0.9}
+                      />
+                    );
+                  }
+                  const passengerGeom = carpoolPassengerGeometries[person.id];
+                  if (passengerGeom && passengerGeom.length > 1) {
+                    return (
+                      <Polyline
+                        key={`carpool-${person.id}`}
+                        positions={passengerGeom}
+                        color={getPersonColor(people, person.id)}
+                        weight={3}
+                        opacity={0.8}
+                        dashArray="5, 5"
+                      />
+                    );
+                  }
+                  return null;
+                }
+              }
+
+              return (
+                <Polyline
+                  key={person.id}
+                  positions={geom}
+                  color={getPersonColor(people, person.id)}
+                  weight={3}
+                  opacity={0.8}
+                />
+              );
+            })}
           </MapContainer>
         </div>
       </div>
