@@ -390,8 +390,10 @@ export default function App() {
         if (!source || !target) return profile;
 
         const targetPoolId = target.carpoolId ?? crypto.randomUUID();
-        const targetPoolSize = profile.people.filter((p) => p.carpoolId === target.carpoolId).length || 1;
-        const sourceAlreadyInTargetPool = source.carpoolId === targetPoolId;
+        const targetPoolSize = target.carpoolId
+          ? profile.people.filter((p) => p.carpoolId === target.carpoolId).length
+          : 1;
+        const sourceAlreadyInTargetPool = Boolean(target.carpoolId && source.carpoolId === target.carpoolId);
         if (!sourceAlreadyInTargetPool && targetPoolSize >= MAX_CARPOOL_SIZE) {
           window.alert(`Carpools can have a maximum of ${MAX_CARPOOL_SIZE} people.`);
           return profile;
