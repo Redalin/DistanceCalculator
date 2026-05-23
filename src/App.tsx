@@ -20,7 +20,7 @@ import {
 } from './sessionStorage';
 import { getPersonColor } from './colors';
 import './App.css';
-import type { CarpoolLeg, LatLng, RouteEntry, RouteGeometry } from './types';
+import type { CarpoolLeg, CarpoolPool, LatLng, RouteEntry, RouteGeometry } from './types';
 
 function createPersonIcon(color: string) {
   return L.divIcon({
@@ -38,7 +38,23 @@ const meetingIcon = new L.Icon({
   iconAnchor: [12, 41],
 });
 
-export type Person = { id: string; name: string; position: LatLng; carpool?: boolean };
+export type Person = { id: string; name: string; position: LatLng; carpool?: boolean; carpoolId?: string };
+
+const MAX_CARPOOL_SIZE = 4;
+
+function personToStoredPerson(p: Person) {
+  return { id: p.id, name: p.name, position: p.position, carpool: p.carpool, carpoolId: p.carpoolId };
+}
+
+function restorePerson(p: Person): Person {
+  return {
+    id: p.id,
+    name: p.name,
+    position: p.position,
+    carpool: p.carpool,
+    carpoolId: p.carpoolId ?? (p.carpool ? 'legacy-carpool' : undefined),
+  };
+}
 
 const TILE_URLS: Record<Theme, string> = {
   dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
@@ -275,7 +291,7 @@ function initialSession(): { people: Person[]; meetingPoint: LatLng | null } {
   const s = loadSession();
   if (!s) return { people: [], meetingPoint: null };
   return {
-    people: s.people.map((p) => ({ id: p.id, name: p.name, position: p.position, carpool: p.carpool })),
+    people: s.people.map(restorePerson),
     meetingPoint: s.meetingPoint,
   };
 }
@@ -284,10 +300,14 @@ function initialProfiles(): { profiles: StoredProfile[]; activeProfileId: string
   const storedProfiles = loadProfiles();
   const storedActiveId = loadActiveProfileId();
   if (storedProfiles.length > 0) {
+    const profiles = storedProfiles.map((profile) => ({
+      ...profile,
+      people: profile.people.map(restorePerson),
+    }));
     const activeId = storedActiveId && storedProfiles.some((profile) => profile.id === storedActiveId)
       ? storedActiveId
-      : storedProfiles[0].id;
-    return { profiles: storedProfiles, activeProfileId: activeId };
+      : profiles[0].id;
+    return { profiles, activeProfileId: activeId };
   }
 
   const session = initialSession();
@@ -320,12 +340,12 @@ export default function App() {
   const [addressSearchLoading, setAddressSearchLoading] = useState(false);
   const [addressSearchError, setAddressSearchError] = useState<string | null>(null);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const [carpoolHostId, setCarpoolHostId] = useState<string | null>(null);
+  const [carpoolPools, setCarpoolPools] = useState<CarpoolPool[]>([]);
   const [carpoolLegs, setCarpoolLegs] = useState<CarpoolLeg[]>([]);
   const [carpoolPassengerGeometries, setCarpoolPassengerGeometries] = useState<Record<string, RouteGeometry>>({});
 
   const clearCarpoolState = useCallback(() => {
-    setCarpoolHostId(null);
+    setCarpoolPools([]);
     setCarpoolLegs([]);
     setCarpoolPassengerGeometries({});
   }, []);
@@ -351,8 +371,40 @@ export default function App() {
     (id: string) => {
       saveActiveProfile((profile) => ({
         ...profile,
-        people: profile.people.map((p) => (p.id === id ? { ...p, carpool: !p.carpool } : p)),
+        people: profile.people.map((p) => {
+          if (p.id !== id) return p;
+          if (p.carpoolId) return { ...p, carpool: false, carpoolId: undefined };
+          return { ...p, carpool: true, carpoolId: crypto.randomUUID() };
+        }),
       }));
+    },
+    [saveActiveProfile]
+  );
+
+  const movePersonToCarpool = useCallback(
+    (personId: string, targetPersonId: string) => {
+      if (personId === targetPersonId) return;
+      saveActiveProfile((profile) => {
+        const source = profile.people.find((p) => p.id === personId);
+        const target = profile.people.find((p) => p.id === targetPersonId);
+        if (!source || !target) return profile;
+
+        const targetPoolId = target.carpoolId ?? crypto.randomUUID();
+        const targetPoolSize = profile.people.filter((p) => p.carpoolId === target.carpoolId).length || 1;
+        const sourceAlreadyInTargetPool = source.carpoolId === targetPoolId;
+        if (!sourceAlreadyInTargetPool && targetPoolSize >= MAX_CARPOOL_SIZE) {
+          window.alert(`Carpools can have a maximum of ${MAX_CARPOOL_SIZE} people.`);
+          return profile;
+        }
+
+        return {
+          ...profile,
+          people: profile.people.map((p) => {
+            if (p.id === personId || p.id === targetPersonId) return { ...p, carpool: true, carpoolId: targetPoolId };
+            return p;
+          }),
+        };
+      });
     },
     [saveActiveProfile]
   );
@@ -378,7 +430,7 @@ export default function App() {
     saveProfiles(profiles);
     saveActiveProfileId(activeProfileId);
     saveSession({
-      people: activeProfile.people.map((p) => ({ id: p.id, name: p.name, position: p.position, carpool: p.carpool })),
+      people: activeProfile.people.map(personToStoredPerson),
       meetingPoint: activeProfile.meetingPoint,
     });
   }, [profiles, activeProfileId, activeProfile]);
@@ -581,10 +633,20 @@ export default function App() {
         routeCache.current.set(coordsKey, { routes: currentRoutes, routeGeometries: currentGeometries });
       }
 
-      // Now process Carpooling calculations if there are >= 2 carpoolers
-      const carpoolers = people.filter((p) => p.carpool);
-      if (carpoolers.length >= 2) {
-        const carpoolCoordsKey = carpoolers
+      const carpoolGroups = people.reduce<Record<string, Person[]>>((groups, person) => {
+        if (!person.carpoolId) return groups;
+        groups[person.carpoolId] = [...(groups[person.carpoolId] ?? []), person];
+        return groups;
+      }, {});
+      const activeCarpoolGroups = Object.entries(carpoolGroups).filter(([, members]) => members.length >= 2);
+
+      if (activeCarpoolGroups.length > 0) {
+        const pools: CarpoolPool[] = [];
+        const legs: CarpoolLeg[] = [];
+        const passengerGeometries: Record<string, RouteGeometry> = {};
+
+        for (const [poolId, carpoolers] of activeCarpoolGroups) {
+          const carpoolCoordsKey = carpoolers
           .map((p) => p.position)
           .map(([lat, lng]) => `${lng},${lat}`)
           .join(';');
@@ -608,7 +670,13 @@ export default function App() {
             let currentHostTotal = hostSoloDist;
             for (let c = 0; c < carpoolers.length; c++) {
               if (c === h) continue;
-              currentHostTotal += carpoolDistances[c][h] / 1000;
+              const passenger = carpoolers[c];
+              const passengerSoloRoute = currentRoutes.find((r) => r.personId === passenger.id);
+              const passengerSoloDist = passengerSoloRoute ? passengerSoloRoute.distance : 0;
+              const passengerToHost = carpoolDistances[c][h] / 1000;
+              const hostToPassenger = carpoolDistances[h][c] / 1000;
+              const driverPickupExtra = hostToPassenger + passengerSoloDist - hostSoloDist;
+              currentHostTotal += Math.min(passengerToHost, driverPickupExtra);
             }
             
             if (currentHostTotal < minTotalDist) {
@@ -618,26 +686,41 @@ export default function App() {
           }
           
           const bestHost = carpoolers[bestHostIndex];
-          setCarpoolHostId(bestHost.id);
+          pools.push({ id: poolId, hostId: bestHost.id, memberIds: carpoolers.map((p) => p.id) });
           
           // Construct driving legs for passengers
-          const legs: CarpoolLeg[] = [];
-          const passengerGeometries: Record<string, RouteGeometry> = {};
-          
           for (let c = 0; c < carpoolers.length; c++) {
             if (c === bestHostIndex) continue;
             const passenger = carpoolers[c];
-            const distToHost = carpoolDistances[c][bestHostIndex] / 1000;
-            const durToHost = carpoolDurations[c][bestHostIndex];
+            const passengerSoloRoute = currentRoutes.find((r) => r.personId === passenger.id);
+            const bestHostSoloRoute = currentRoutes.find((r) => r.personId === bestHost.id);
+            const passengerSoloDist = passengerSoloRoute ? passengerSoloRoute.distance : 0;
+            const passengerToHost = carpoolDistances[c][bestHostIndex] / 1000;
+            const passengerToHostDuration = carpoolDurations[c][bestHostIndex];
+            const hostToPassenger = carpoolDistances[bestHostIndex][c] / 1000;
+            const hostToPassengerDuration = carpoolDurations[bestHostIndex][c];
+            const hostSoloDist = bestHostSoloRoute ? bestHostSoloRoute.distance : 0;
+            const driverPickupExtra = hostToPassenger + passengerSoloDist - hostSoloDist;
+            const driverPicksUp = driverPickupExtra < passengerToHost;
+            const legDistance = driverPicksUp ? driverPickupExtra : passengerToHost;
+            const legDuration = driverPicksUp ? hostToPassengerDuration : passengerToHostDuration;
             
             legs.push({
+              poolId,
+              hostId: bestHost.id,
               passengerId: passenger.id,
-              distance: distToHost,
-              duration: durToHost,
+              distance: legDistance,
+              duration: legDuration,
+              pickupMode: driverPicksUp ? 'driver-picks-up' : 'passenger-meets-driver',
+              passengerDriveDistance: driverPicksUp ? 0 : passengerToHost,
+              driverDetourDistance: driverPicksUp ? driverPickupExtra : 0,
+              pickupDistance: driverPicksUp ? hostToPassenger : passengerToHost,
             });
             
             // Fetch passenger-to-host route geometry
-            const segmentKey = `${passenger.position[1]},${passenger.position[0]};${bestHost.position[1]},${bestHost.position[0]}`;
+            const segmentKey = driverPicksUp
+              ? `${bestHost.position[1]},${bestHost.position[0]};${passenger.position[1]},${passenger.position[0]}`
+              : `${passenger.position[1]},${passenger.position[0]};${bestHost.position[1]},${bestHost.position[0]}`;
             const segCached = segmentCache.current.get(segmentKey);
             if (segCached) {
               passengerGeometries[passenger.id] = segCached;
@@ -659,11 +742,14 @@ export default function App() {
             }
           }
           
-          setCarpoolLegs(legs);
-          setCarpoolPassengerGeometries(passengerGeometries);
         } else {
           clearCarpoolState();
+          return;
         }
+        }
+        setCarpoolPools(pools);
+        setCarpoolLegs(legs);
+        setCarpoolPassengerGeometries(passengerGeometries);
       } else {
         clearCarpoolState();
       }
@@ -904,7 +990,8 @@ export default function App() {
           showPanel={showPanel}
           onTogglePanel={() => setShowPanel((s) => !s)}
           onToggleCarpool={toggleCarpool}
-          carpoolHostId={carpoolHostId}
+          onMovePersonToCarpool={movePersonToCarpool}
+          carpoolPools={carpoolPools}
           carpoolLegs={carpoolLegs}
         />
         <div className="map-wrapper">
@@ -932,10 +1019,13 @@ export default function App() {
             <MapClickHandler onAddPerson={addPerson} onSetMeeting={setMeeting} mode={mode} />
             {people.map((p) => {
               const route = routes.find((r) => r.personId === p.id);
-              const isCarpool = carpoolHostId && p.carpool;
-              const isHost = isCarpool && p.id === carpoolHostId;
-              const isPassenger = isCarpool && p.id !== carpoolHostId;
-              const passengerLeg = isPassenger ? carpoolLegs.find(l => l.passengerId === p.id) : null;
+              const carpoolPool = p.carpoolId ? carpoolPools.find((pool) => pool.id === p.carpoolId) : null;
+              const isCarpool = Boolean(carpoolPool);
+              const isHost = isCarpool && p.id === carpoolPool?.hostId;
+              const isPassenger = isCarpool && p.id !== carpoolPool?.hostId;
+              const passengerLeg = isPassenger
+                ? carpoolLegs.find((leg) => leg.poolId === carpoolPool?.id && leg.passengerId === p.id)
+                : null;
               
               return (
                 <Marker
@@ -964,7 +1054,9 @@ export default function App() {
                     {isPassenger && passengerLeg && (
                       <>
                         <br />
-                        Drives to host: {passengerLeg.distance.toFixed(1)} km
+                        {passengerLeg.pickupMode === 'driver-picks-up'
+                          ? `Driver picks up: ${passengerLeg.pickupDistance.toFixed(1)} km pickup leg`
+                          : `Drives to host: ${passengerLeg.passengerDriveDistance.toFixed(1)} km`}
                         <br />
                         Rides to meeting: {route ? route.distance.toFixed(1) : 0} km
                       </>
@@ -1010,9 +1102,10 @@ export default function App() {
               const person = people[i];
               if (!geom || geom.length <= 1 || !person) return null;
 
-              if (carpoolHostId) {
-                if (person.carpool) {
-                  if (person.id === carpoolHostId) {
+              if (person.carpoolId) {
+                const pool = carpoolPools.find((carpoolPool) => carpoolPool.id === person.carpoolId);
+                if (pool) {
+                  if (person.id === pool.hostId) {
                     return (
                       <Polyline
                         key={person.id}

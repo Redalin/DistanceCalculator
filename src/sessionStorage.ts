@@ -5,7 +5,7 @@ const PROFILES_KEY = 'distance-calculator-profiles';
 const ACTIVE_PROFILE_KEY = 'distance-calculator-active-profile';
 
 export type StoredFavourite = { id: string; name: string; position: [number, number] };
-export type StoredPerson = { id: string; name: string; position: [number, number]; carpool?: boolean };
+export type StoredPerson = { id: string; name: string; position: [number, number]; carpool?: boolean; carpoolId?: string };
 export type StoredProfile = {
   id: string;
   name: string;
@@ -107,7 +107,8 @@ function isValidPerson(p: unknown): p is StoredPerson {
     typeof (p as StoredPerson).id === 'string' &&
     typeof (p as StoredPerson).name === 'string' &&
     isValidLatLng((p as StoredPerson).position) &&
-    ((p as any).carpool === undefined || typeof (p as any).carpool === 'boolean')
+    ((p as any).carpool === undefined || typeof (p as any).carpool === 'boolean') &&
+    ((p as any).carpoolId === undefined || typeof (p as any).carpoolId === 'string')
   );
 }
 
