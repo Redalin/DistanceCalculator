@@ -22,7 +22,7 @@ async function fetchPreferIPv4Json(rawUrl, timeoutMs = 15000) {
   try {
     const r = await dnsPromises.lookup(host, { all: true, family: 4 });
     addresses = r.map((x) => x.address);
-  } catch (e) {
+  } catch {
     // ignore and fall back to system resolver
   }
   // Prefer the first IPv4 address if available; otherwise use the hostname.
@@ -87,7 +87,7 @@ async function checkOsrmReachable(timeoutMs = 3000) {
     try {
       const r = await dnsPromises.lookup(host, { family: 4 });
       addr = r.address;
-    } catch (e) {
+    } catch {
       addr = host;
     }
 
@@ -102,7 +102,7 @@ async function checkOsrmReachable(timeoutMs = 3000) {
         resolve(false);
       });
     });
-  } catch (e) {
+    } catch {
     return false;
   }
 }
@@ -116,7 +116,7 @@ const OSRM_BASE = process.env.OSRM_URL || 'https://router.project-osrm.org';
 // Prefer IPv4 address order to avoid IPv6 resolution/connect issues in some hosts
 try {
   if (dns.setDefaultResultOrder) dns.setDefaultResultOrder('ipv4first');
-} catch (e) {
+} catch {
   // ignore if not supported
 }
 
@@ -133,7 +133,7 @@ app.get('/health', async (_, res) => {
 // GET /api/table?coords=lon1,lat1;lon2,lat2;lon3,lat3
 // coords: person1, person2, ..., meetingPoint (last coord is destination)
 app.get('/api/table', async (req, res) => {
-  const { coords } = req.query;
+  const { coords, all } = req.query;
   if (!coords || typeof coords !== 'string') {
     return res.status(400).json({ error: 'Missing or invalid coords (lon,lat;lon,lat;...)' });
   }
@@ -142,9 +142,14 @@ app.get('/api/table', async (req, res) => {
     return res.status(400).json({ error: 'Need at least 2 points' });
   }
   const coordsParam = points.join(';');
-  const sources = Array.from({ length: points.length - 1 }, (_, i) => i).join(';');
-  const destinations = String(points.length - 1);
-  const url = `${OSRM_BASE}/table/v1/driving/${coordsParam}?sources=${sources}&destinations=${destinations}&annotations=duration,distance`;
+  let url;
+  if (all === 'true') {
+    url = `${OSRM_BASE}/table/v1/driving/${coordsParam}?annotations=duration,distance`;
+  } else {
+    const sources = Array.from({ length: points.length - 1 }, (_, i) => i).join(';');
+    const destinations = String(points.length - 1);
+    url = `${OSRM_BASE}/table/v1/driving/${coordsParam}?sources=${sources}&destinations=${destinations}&annotations=duration,distance`;
+  }
   try {
     const data = await fetchWithRetry(url);
     if (data.code !== 'Ok') {

@@ -20,7 +20,7 @@ import {
 } from './sessionStorage';
 import { getPersonColor } from './colors';
 import './App.css';
-import type { LatLng } from './types';
+import type { CarpoolLeg, CarpoolPool, LatLng, RouteEntry, RouteGeometry } from './types';
 
 function createPersonIcon(color: string) {
   return L.divIcon({
@@ -38,7 +38,23 @@ const meetingIcon = new L.Icon({
   iconAnchor: [12, 41],
 });
 
-export type Person = { id: string; name: string; position: LatLng };
+export type Person = { id: string; name: string; position: LatLng; carpool?: boolean; carpoolId?: string };
+
+const MAX_CARPOOL_SIZE = 4;
+
+function personToStoredPerson(p: Person) {
+  return { id: p.id, name: p.name, position: p.position, carpool: p.carpool, carpoolId: p.carpoolId };
+}
+
+function restorePerson(p: Person): Person {
+  return {
+    id: p.id,
+    name: p.name,
+    position: p.position,
+    carpool: p.carpool,
+    carpoolId: p.carpoolId ?? (p.carpool ? 'legacy-carpool' : undefined),
+  };
+}
 
 const TILE_URLS: Record<Theme, string> = {
   dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
@@ -275,7 +291,7 @@ function initialSession(): { people: Person[]; meetingPoint: LatLng | null } {
   const s = loadSession();
   if (!s) return { people: [], meetingPoint: null };
   return {
-    people: s.people.map((p) => ({ id: p.id, name: p.name, position: p.position })),
+    people: s.people.map(restorePerson),
     meetingPoint: s.meetingPoint,
   };
 }
@@ -284,10 +300,14 @@ function initialProfiles(): { profiles: StoredProfile[]; activeProfileId: string
   const storedProfiles = loadProfiles();
   const storedActiveId = loadActiveProfileId();
   if (storedProfiles.length > 0) {
+    const profiles = storedProfiles.map((profile) => ({
+      ...profile,
+      people: profile.people.map(restorePerson),
+    }));
     const activeId = storedActiveId && storedProfiles.some((profile) => profile.id === storedActiveId)
       ? storedActiveId
-      : storedProfiles[0].id;
-    return { profiles: storedProfiles, activeProfileId: activeId };
+      : profiles[0].id;
+    return { profiles, activeProfileId: activeId };
   }
 
   const session = initialSession();
@@ -309,9 +329,9 @@ export default function App() {
   const meetingPoint = activeProfile.meetingPoint;
   const [theme, setTheme] = useState<Theme>(() => loadTheme());
   const [mode, setMode] = useState<'person' | 'meeting' | null>(null);
-  const [routes, setRoutes] = useState<{ personId: string; distance: number; duration: number }[]>([]);
+  const [routes, setRoutes] = useState<RouteEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [routeGeometries, setRouteGeometries] = useState<[number, number][][]>([]);
+  const [routeGeometries, setRouteGeometries] = useState<RouteGeometry[]>([]);
   const [favourites, setFavourites] = useState<StoredFavourite[]>(() => loadFavourites());
   const [showPanel, setShowPanel] = useState(true);
   const [addressSearchTarget, setAddressSearchTarget] = useState<AddressSearchTarget | null>(null);
@@ -320,6 +340,74 @@ export default function App() {
   const [addressSearchLoading, setAddressSearchLoading] = useState(false);
   const [addressSearchError, setAddressSearchError] = useState<string | null>(null);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [carpoolPools, setCarpoolPools] = useState<CarpoolPool[]>([]);
+  const [carpoolLegs, setCarpoolLegs] = useState<CarpoolLeg[]>([]);
+  const [carpoolPassengerGeometries, setCarpoolPassengerGeometries] = useState<Record<string, RouteGeometry>>({});
+
+  const clearCarpoolState = useCallback(() => {
+    setCarpoolPools([]);
+    setCarpoolLegs([]);
+    setCarpoolPassengerGeometries({});
+  }, []);
+
+  const clearCalculatedRoutes = useCallback(() => {
+    setRoutes([]);
+    setRouteGeometries([]);
+    clearCarpoolState();
+  }, [clearCarpoolState]);
+
+  const saveActiveProfile = useCallback(
+    (updater: (profile: StoredProfile) => StoredProfile) => {
+      setProfiles((prev) =>
+        prev.map((profile) =>
+          profile.id === activeProfileId ? updater(profile) : profile
+        )
+      );
+    },
+    [activeProfileId]
+  );
+
+  const toggleCarpool = useCallback(
+    (id: string) => {
+      saveActiveProfile((profile) => ({
+        ...profile,
+        people: profile.people.map((p) => {
+          if (p.id !== id) return p;
+          if (p.carpoolId) return { ...p, carpool: false, carpoolId: undefined };
+          return { ...p, carpool: true, carpoolId: crypto.randomUUID() };
+        }),
+      }));
+    },
+    [saveActiveProfile]
+  );
+
+  const movePersonToCarpool = useCallback(
+    (personId: string, targetPersonId: string) => {
+      if (personId === targetPersonId) return;
+      saveActiveProfile((profile) => {
+        const source = profile.people.find((p) => p.id === personId);
+        const target = profile.people.find((p) => p.id === targetPersonId);
+        if (!source || !target) return profile;
+
+        const targetPoolId = target.carpoolId ?? crypto.randomUUID();
+        const targetPoolSize = profile.people.filter((p) => p.carpoolId === target.carpoolId).length || 1;
+        const sourceAlreadyInTargetPool = source.carpoolId === targetPoolId;
+        if (!sourceAlreadyInTargetPool && targetPoolSize >= MAX_CARPOOL_SIZE) {
+          window.alert(`Carpools can have a maximum of ${MAX_CARPOOL_SIZE} people.`);
+          return profile;
+        }
+
+        return {
+          ...profile,
+          people: profile.people.map((p) => {
+            if (p.id === personId || p.id === targetPersonId) return { ...p, carpool: true, carpoolId: targetPoolId };
+            return p;
+          }),
+        };
+      });
+    },
+    [saveActiveProfile]
+  );
 
   useEffect(() => {
     const handleClickOutside = () => setShowProfileMenu(false);
@@ -342,21 +430,10 @@ export default function App() {
     saveProfiles(profiles);
     saveActiveProfileId(activeProfileId);
     saveSession({
-      people: activeProfile.people.map((p) => ({ id: p.id, name: p.name, position: p.position })),
+      people: activeProfile.people.map(personToStoredPerson),
       meetingPoint: activeProfile.meetingPoint,
     });
   }, [profiles, activeProfileId, activeProfile]);
-
-  const saveActiveProfile = useCallback(
-    (updater: (profile: StoredProfile) => StoredProfile) => {
-      setProfiles((prev) =>
-        prev.map((profile) =>
-          profile.id === activeProfileId ? updater(profile) : profile
-        )
-      );
-    },
-    [activeProfileId]
-  );
 
   const addPerson = useCallback(
     (lat: number, lng: number) => {
@@ -386,10 +463,9 @@ export default function App() {
         ...profile,
         people: profile.people.filter((x) => x.id !== id),
       }));
-      setRoutes((r) => r.filter((x) => x.personId !== id));
-      setRouteGeometries([]);
+      clearCalculatedRoutes();
     },
-    [saveActiveProfile]
+    [saveActiveProfile, clearCalculatedRoutes]
   );
 
   const updatePersonName = useCallback(
@@ -483,13 +559,13 @@ export default function App() {
       }
       closeAddressSearch();
     },
-    [addressSearchTarget, addPerson, movePerson, closeAddressSearch]
+    [addressSearchTarget, addPerson, setMeeting, movePerson, closeAddressSearch]
   );
 
   const routeCache = useRef<
-    Map<string, { routes: { personId: string; distance: number; duration: number }[]; routeGeometries: [number, number][][] }>
+    Map<string, { routes: RouteEntry[]; routeGeometries: RouteGeometry[] }>
   >(new Map());
-  const segmentCache = useRef<Map<string, [number, number][]>>(new Map());
+  const segmentCache = useRef<Map<string, RouteGeometry>>(new Map());
   const MAX_CACHE_SIZE = 30;
   const MAX_SEGMENT_CACHE = 100;
 
@@ -499,62 +575,190 @@ export default function App() {
       .map(([lat, lng]) => `${lng},${lat}`)
       .join(';');
     const cached = routeCache.current.get(coordsKey);
-    if (cached) {
-      setRoutes(cached.routes);
-      setRouteGeometries(cached.routeGeometries);
-      return;
-    }
+    
+    let currentRoutes: RouteEntry[];
+    let currentGeometries: RouteGeometry[];
+    
     setLoading(true);
-    setRoutes([]);
-    setRouteGeometries([]);
     try {
-      const res = await fetch(`/api/table?coords=${encodeURIComponent(coordsKey)}`);
-      if (!res.ok) throw new Error('Routing failed');
-      const data = await res.json();
-      const durations = data.durations as number[][];
-      const distances = data.distances as number[][];
-      if (!durations?.[0] || !distances?.[0]) throw new Error('Invalid response');
-      const routes = people.map((p, i) => ({
-        personId: p.id,
-        distance: distances[i][0] / 1000,
-        duration: durations[i][0],
-      }));
-      setRoutes(routes);
-      const geoms: [number, number][][] = [];
-      for (let i = 0; i < people.length; i++) {
-        const coordStr = `${people[i].position[1]},${people[i].position[0]};${meetingPoint[1]},${meetingPoint[0]}`;
-        const segCached = segmentCache.current.get(coordStr);
-        if (segCached) {
-          geoms.push(segCached);
-        } else {
-          const r = await fetch(`/api/route?coords=${encodeURIComponent(coordStr)}`);
-          if (r.ok) {
-            const routeData = await r.json();
-            const coords = routeData.routes?.[0]?.geometry?.coordinates;
-            const geom = coords ? (coords.map((c: number[]) => [c[1], c[0]]) as [number, number][]) : [];
-            geoms.push(geom);
-            if (segmentCache.current.size >= MAX_SEGMENT_CACHE) {
-              const firstKey = segmentCache.current.keys().next().value;
-              if (firstKey !== undefined) segmentCache.current.delete(firstKey);
-            }
-            segmentCache.current.set(coordStr, geom);
+      if (cached) {
+        currentRoutes = cached.routes;
+        currentGeometries = cached.routeGeometries;
+        setRoutes(currentRoutes);
+        setRouteGeometries(currentGeometries);
+      } else {
+        setRoutes([]);
+        setRouteGeometries([]);
+        const res = await fetch(`/api/table?coords=${encodeURIComponent(coordsKey)}`);
+        if (!res.ok) throw new Error('Routing failed');
+        const data = await res.json();
+        const durations = data.durations as number[][];
+        const distances = data.distances as number[][];
+        if (!durations?.[0] || !distances?.[0]) throw new Error('Invalid response');
+        currentRoutes = people.map((p, i) => ({
+          personId: p.id,
+          distance: distances[i][0] / 1000,
+          duration: durations[i][0],
+        }));
+        setRoutes(currentRoutes);
+        const geoms: RouteGeometry[] = [];
+        for (let i = 0; i < people.length; i++) {
+          const coordStr = `${people[i].position[1]},${people[i].position[0]};${meetingPoint[1]},${meetingPoint[0]}`;
+          const segCached = segmentCache.current.get(coordStr);
+          if (segCached) {
+            geoms.push(segCached);
           } else {
-            geoms.push([]);
+            const r = await fetch(`/api/route?coords=${encodeURIComponent(coordStr)}`);
+            if (r.ok) {
+              const routeData = await r.json();
+              const coords = routeData.routes?.[0]?.geometry?.coordinates;
+              const geom = coords ? (coords.map((c: number[]) => [c[1], c[0]]) as RouteGeometry) : [];
+              geoms.push(geom);
+              if (segmentCache.current.size >= MAX_SEGMENT_CACHE) {
+                const firstKey = segmentCache.current.keys().next().value;
+                if (firstKey !== undefined) segmentCache.current.delete(firstKey);
+              }
+              segmentCache.current.set(coordStr, geom);
+            } else {
+              geoms.push([]);
+            }
           }
         }
+        currentGeometries = geoms;
+        setRouteGeometries(currentGeometries);
+        if (routeCache.current.size >= MAX_CACHE_SIZE) {
+          const firstKey = routeCache.current.keys().next().value;
+          if (firstKey !== undefined) routeCache.current.delete(firstKey);
+        }
+        routeCache.current.set(coordsKey, { routes: currentRoutes, routeGeometries: currentGeometries });
       }
-      setRouteGeometries(geoms);
-      if (routeCache.current.size >= MAX_CACHE_SIZE) {
-        const firstKey = routeCache.current.keys().next().value;
-        if (firstKey !== undefined) routeCache.current.delete(firstKey);
+
+      const carpoolGroups = people.reduce<Record<string, Person[]>>((groups, person) => {
+        if (!person.carpoolId) return groups;
+        groups[person.carpoolId] = [...(groups[person.carpoolId] ?? []), person];
+        return groups;
+      }, {});
+      const activeCarpoolGroups = Object.entries(carpoolGroups).filter(([, members]) => members.length >= 2);
+
+      if (activeCarpoolGroups.length > 0) {
+        const pools: CarpoolPool[] = [];
+        const legs: CarpoolLeg[] = [];
+        const passengerGeometries: Record<string, RouteGeometry> = {};
+
+        for (const [poolId, carpoolers] of activeCarpoolGroups) {
+          const carpoolCoordsKey = carpoolers
+          .map((p) => p.position)
+          .map(([lat, lng]) => `${lng},${lat}`)
+          .join(';');
+        
+        const carpoolRes = await fetch(`/api/table?all=true&coords=${encodeURIComponent(carpoolCoordsKey)}`);
+        if (!carpoolRes.ok) throw new Error('Carpool matrix routing failed');
+        const carpoolData = await carpoolRes.json();
+        const carpoolDistances = carpoolData.distances as number[][];
+        const carpoolDurations = carpoolData.durations as number[][];
+        
+        if (carpoolDistances && carpoolDurations) {
+          // Find the best host index (minimizes total driving distance)
+          let bestHostIndex = 0;
+          let minTotalDist = Infinity;
+          
+          for (let h = 0; h < carpoolers.length; h++) {
+            const hostId = carpoolers[h].id;
+            const hostSoloRoute = currentRoutes.find((r) => r.personId === hostId);
+            const hostSoloDist = hostSoloRoute ? hostSoloRoute.distance : 0;
+            
+            let currentHostTotal = hostSoloDist;
+            for (let c = 0; c < carpoolers.length; c++) {
+              if (c === h) continue;
+              const passenger = carpoolers[c];
+              const passengerSoloRoute = currentRoutes.find((r) => r.personId === passenger.id);
+              const passengerSoloDist = passengerSoloRoute ? passengerSoloRoute.distance : 0;
+              const passengerToHost = carpoolDistances[c][h] / 1000;
+              const hostToPassenger = carpoolDistances[h][c] / 1000;
+              const driverPickupExtra = hostToPassenger + passengerSoloDist - hostSoloDist;
+              currentHostTotal += Math.min(passengerToHost, driverPickupExtra);
+            }
+            
+            if (currentHostTotal < minTotalDist) {
+              minTotalDist = currentHostTotal;
+              bestHostIndex = h;
+            }
+          }
+          
+          const bestHost = carpoolers[bestHostIndex];
+          pools.push({ id: poolId, hostId: bestHost.id, memberIds: carpoolers.map((p) => p.id) });
+          
+          // Construct driving legs for passengers
+          for (let c = 0; c < carpoolers.length; c++) {
+            if (c === bestHostIndex) continue;
+            const passenger = carpoolers[c];
+            const passengerSoloRoute = currentRoutes.find((r) => r.personId === passenger.id);
+            const bestHostSoloRoute = currentRoutes.find((r) => r.personId === bestHost.id);
+            const passengerSoloDist = passengerSoloRoute ? passengerSoloRoute.distance : 0;
+            const passengerToHost = carpoolDistances[c][bestHostIndex] / 1000;
+            const passengerToHostDuration = carpoolDurations[c][bestHostIndex];
+            const hostToPassenger = carpoolDistances[bestHostIndex][c] / 1000;
+            const hostToPassengerDuration = carpoolDurations[bestHostIndex][c];
+            const hostSoloDist = bestHostSoloRoute ? bestHostSoloRoute.distance : 0;
+            const driverPickupExtra = hostToPassenger + passengerSoloDist - hostSoloDist;
+            const driverPicksUp = driverPickupExtra < passengerToHost;
+            const legDistance = driverPicksUp ? driverPickupExtra : passengerToHost;
+            const legDuration = driverPicksUp ? hostToPassengerDuration : passengerToHostDuration;
+            
+            legs.push({
+              poolId,
+              hostId: bestHost.id,
+              passengerId: passenger.id,
+              distance: legDistance,
+              duration: legDuration,
+              pickupMode: driverPicksUp ? 'driver-picks-up' : 'passenger-meets-driver',
+              passengerDriveDistance: driverPicksUp ? 0 : passengerToHost,
+              driverDetourDistance: driverPicksUp ? driverPickupExtra : 0,
+              pickupDistance: driverPicksUp ? hostToPassenger : passengerToHost,
+            });
+            
+            // Fetch passenger-to-host route geometry
+            const segmentKey = driverPicksUp
+              ? `${bestHost.position[1]},${bestHost.position[0]};${passenger.position[1]},${passenger.position[0]}`
+              : `${passenger.position[1]},${passenger.position[0]};${bestHost.position[1]},${bestHost.position[0]}`;
+            const segCached = segmentCache.current.get(segmentKey);
+            if (segCached) {
+              passengerGeometries[passenger.id] = segCached;
+            } else {
+              const r = await fetch(`/api/route?coords=${encodeURIComponent(segmentKey)}`);
+              if (r.ok) {
+                const routeData = await r.json();
+                const coords = routeData.routes?.[0]?.geometry?.coordinates;
+                const geom = coords ? (coords.map((c: number[]) => [c[1], c[0]]) as RouteGeometry) : [];
+                passengerGeometries[passenger.id] = geom;
+                if (segmentCache.current.size >= MAX_SEGMENT_CACHE) {
+                  const firstKey = segmentCache.current.keys().next().value;
+                  if (firstKey !== undefined) segmentCache.current.delete(firstKey);
+                }
+                segmentCache.current.set(segmentKey, geom);
+              } else {
+                passengerGeometries[passenger.id] = [];
+              }
+            }
+          }
+          
+        } else {
+          clearCarpoolState();
+          return;
+        }
+        }
+        setCarpoolPools(pools);
+        setCarpoolLegs(legs);
+        setCarpoolPassengerGeometries(passengerGeometries);
+      } else {
+        clearCarpoolState();
       }
-      routeCache.current.set(coordsKey, { routes, routeGeometries: geoms });
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
-  }, [meetingPoint, people]);
+  }, [meetingPoint, people, clearCarpoolState]);
 
   // Auto-recalculate when people or meeting point change (add, move, or meeting move)
   useEffect(() => {
@@ -565,15 +769,13 @@ export default function App() {
 
   const clearMeeting = useCallback(() => {
     saveActiveProfile((profile) => ({ ...profile, meetingPoint: null }));
-    setRoutes([]);
-    setRouteGeometries([]);
-  }, [saveActiveProfile]);
+    clearCalculatedRoutes();
+  }, [saveActiveProfile, clearCalculatedRoutes]);
 
   const clearAllPeople = useCallback(() => {
     saveActiveProfile((profile) => ({ ...profile, people: [] }));
-    setRoutes([]);
-    setRouteGeometries([]);
-  }, [saveActiveProfile]);
+    clearCalculatedRoutes();
+  }, [saveActiveProfile, clearCalculatedRoutes]);
 
   const toggleTheme = useCallback(() => {
     setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
@@ -601,9 +803,8 @@ export default function App() {
     };
     setProfiles((prev) => [...prev, profile]);
     setActiveProfileId(profile.id);
-    setRoutes([]);
-    setRouteGeometries([]);
-  }, [profiles.length]);
+    clearCalculatedRoutes();
+  }, [profiles.length, clearCalculatedRoutes]);
 
   const cloneProfile = useCallback(() => {
     const name = window.prompt('Clone profile name', `${activeProfile.name} copy`)?.trim();
@@ -616,9 +817,8 @@ export default function App() {
     };
     setProfiles((prev) => [...prev, profile]);
     setActiveProfileId(profile.id);
-    setRoutes([]);
-    setRouteGeometries([]);
-  }, [activeProfile, activeProfile.name]);
+    clearCalculatedRoutes();
+  }, [activeProfile, clearCalculatedRoutes]);
 
   const renameProfile = useCallback(() => {
     const name = window.prompt('Rename profile', activeProfile.name)?.trim();
@@ -631,20 +831,18 @@ export default function App() {
   }, [activeProfile.name, activeProfileId]);
 
   const deleteProfile = useCallback(() => {
-    if (profiles.length <= 1) return;
-    if (!window.confirm(`Delete profile “${activeProfile.name}”?`)) return;
-    setProfiles((prev) => prev.filter((profile) => profile.id !== activeProfileId));
-    setRoutes([]);
-    setRouteGeometries([]);
-    const remaining = profiles.filter((profile) => profile.id !== activeProfileId);
-    setActiveProfileId(remaining[0].id);
-  }, [activeProfile.name, activeProfileId, profiles]);
-
-  const switchProfile = useCallback((id: string) => {
-    setActiveProfileId(id);
-    setRoutes([]);
-    setRouteGeometries([]);
-  }, []);
+     if (profiles.length <= 1) return;
+     if (!window.confirm(`Delete profile “${activeProfile.name}”?`)) return;
+     setProfiles((prev) => prev.filter((profile) => profile.id !== activeProfileId));
+     clearCalculatedRoutes();
+     const remaining = profiles.filter((profile) => profile.id !== activeProfileId);
+     setActiveProfileId(remaining[0].id);
+   }, [activeProfile.name, activeProfileId, profiles, clearCalculatedRoutes]);
+ 
+   const switchProfile = useCallback((id: string) => {
+     setActiveProfileId(id);
+     clearCalculatedRoutes();
+   }, [clearCalculatedRoutes]);
 
   const removeFavourite = useCallback((id: string) => {
     setFavourites((prev) => prev.filter((f) => f.id !== id));
@@ -791,6 +989,10 @@ export default function App() {
           onClearAllPeople={clearAllPeople}
           showPanel={showPanel}
           onTogglePanel={() => setShowPanel((s) => !s)}
+          onToggleCarpool={toggleCarpool}
+          onMovePersonToCarpool={movePersonToCarpool}
+          carpoolPools={carpoolPools}
+          carpoolLegs={carpoolLegs}
         />
         <div className="map-wrapper">
           <MapContainer
@@ -817,6 +1019,14 @@ export default function App() {
             <MapClickHandler onAddPerson={addPerson} onSetMeeting={setMeeting} mode={mode} />
             {people.map((p) => {
               const route = routes.find((r) => r.personId === p.id);
+              const carpoolPool = p.carpoolId ? carpoolPools.find((pool) => pool.id === p.carpoolId) : null;
+              const isCarpool = Boolean(carpoolPool);
+              const isHost = isCarpool && p.id === carpoolPool?.hostId;
+              const isPassenger = isCarpool && p.id !== carpoolPool?.hostId;
+              const passengerLeg = isPassenger
+                ? carpoolLegs.find((leg) => leg.poolId === carpoolPool?.id && leg.passengerId === p.id)
+                : null;
+              
               return (
                 <Marker
                   key={p.id}
@@ -832,10 +1042,23 @@ export default function App() {
                 >
                   <Popup>
                     <strong>{p.name}</strong>
-                    {route && (
+                    {isHost && <span style={{ color: 'var(--green)', fontSize: '0.8rem', display: 'block', fontWeight: 600 }}>🚗 Carpool Driver / Host</span>}
+                    {isPassenger && <span style={{ color: 'var(--accent)', fontSize: '0.8rem', display: 'block', fontWeight: 600 }}>👥 Carpool Passenger</span>}
+                    
+                    {route && !isPassenger && (
                       <>
                         <br />
                         Distance: {route.distance.toFixed(1)} km
+                      </>
+                    )}
+                    {isPassenger && passengerLeg && (
+                      <>
+                        <br />
+                        {passengerLeg.pickupMode === 'driver-picks-up'
+                          ? `Driver picks up: ${passengerLeg.pickupDistance.toFixed(1)} km pickup leg`
+                          : `Drives to host: ${passengerLeg.passengerDriveDistance.toFixed(1)} km`}
+                        <br />
+                        Rides to meeting: {route ? route.distance.toFixed(1) : 0} km
                       </>
                     )}
                     <br />
@@ -875,19 +1098,51 @@ export default function App() {
                 </Popup>
               </Marker>
             )}
-            {routeGeometries.map(
-              (geom, i) =>
-                geom.length > 1 &&
-                people[i] && (
-                  <Polyline
-                    key={people[i].id}
-                    positions={geom}
-                    color={getPersonColor(people, people[i].id)}
-                    weight={3}
-                    opacity={0.8}
-                  />
-                )
-            )}
+            {routeGeometries.map((geom, i) => {
+              const person = people[i];
+              if (!geom || geom.length <= 1 || !person) return null;
+
+              if (person.carpoolId) {
+                const pool = carpoolPools.find((carpoolPool) => carpoolPool.id === person.carpoolId);
+                if (pool) {
+                  if (person.id === pool.hostId) {
+                    return (
+                      <Polyline
+                        key={person.id}
+                        positions={geom}
+                        color={getPersonColor(people, person.id)}
+                        weight={6}
+                        opacity={0.9}
+                      />
+                    );
+                  }
+                  const passengerGeom = carpoolPassengerGeometries[person.id];
+                  if (passengerGeom && passengerGeom.length > 1) {
+                    return (
+                      <Polyline
+                        key={`carpool-${person.id}`}
+                        positions={passengerGeom}
+                        color={getPersonColor(people, person.id)}
+                        weight={3}
+                        opacity={0.8}
+                        dashArray="5, 5"
+                      />
+                    );
+                  }
+                  return null;
+                }
+              }
+
+              return (
+                <Polyline
+                  key={person.id}
+                  positions={geom}
+                  color={getPersonColor(people, person.id)}
+                  weight={3}
+                  opacity={0.8}
+                />
+              );
+            })}
           </MapContainer>
         </div>
       </div>

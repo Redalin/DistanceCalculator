@@ -1,27 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import type { Person } from './App';
 import { getPersonColor } from './colors';
-import type { LatLng } from './types';
+import { formatDuration, formatKm } from './format';
+import type { CarpoolLeg, CarpoolPool, LatLng, RouteEntry } from './types';
 import type { StoredFavourite } from './sessionStorage';
 
-type RouteEntry = { personId: string; distance: number; duration: number };
-
-function formatKm(km: number): string {
-  if (km >= 1) return `${km.toFixed(1)} km`;
-  return `${Math.round(km * 1000)} m`;
-}
-
-function formatDuration(seconds: number): string {
-  const totalMinutes = Math.ceil(seconds / 60);
-  if (totalMinutes >= 60) {
-    const h = Math.floor(totalMinutes / 60);
-    const min = totalMinutes % 60;
-    return min ? `${h}h ${min}m` : `${h}h`;
-  }
-  return `${totalMinutes}m`;
-}
-
 const MAX_FAVOURITES = 9;
+const MAX_CARPOOL_SIZE = 4;
 
 export function DistancePanel({
   people,
@@ -36,6 +21,10 @@ export function DistancePanel({
   onClearAllPeople,
   showPanel,
   onTogglePanel,
+  onToggleCarpool,
+  onMovePersonToCarpool,
+  carpoolPools,
+  carpoolLegs,
 }: {
   people: Person[];
   routes: RouteEntry[];
@@ -49,10 +38,15 @@ export function DistancePanel({
   onClearAllPeople?: () => void;
   showPanel?: boolean;
   onTogglePanel?: () => void;
+  onToggleCarpool: (id: string) => void;
+  onMovePersonToCarpool: (personId: string, targetPersonId: string) => void;
+  carpoolPools?: CarpoolPool[];
+  carpoolLegs?: CarpoolLeg[];
 }) {
   const [sortByDistance, setSortByDistance] = useState(false);
   const [width, setWidth] = useState(250);
   const [isResizing, setIsResizing] = useState(false);
+  const [draggedPersonId, setDraggedPersonId] = useState<string | null>(null);
   const panelRef = useRef<HTMLElement>(null);
 
   const handlePointerDown = (e: React.PointerEvent) => {
@@ -109,6 +103,27 @@ export function DistancePanel({
   //   ? routes.reduce((a, b) => (b.duration > a.duration ? b : a))
   //   : null;
 
+  const activeCarpoolPools = carpoolPools ?? [];
+  const hasCarpool = activeCarpoolPools.length > 0;
+
+  let totalSavedDistance = 0;
+  const hostNames: string[] = [];
+  if (hasCarpool) {
+    activeCarpoolPools.forEach((pool) => {
+      const host = people.find((p) => p.id === pool.hostId);
+      if (host) hostNames.push(host.name);
+
+      pool.memberIds.forEach((personId) => {
+        if (personId === pool.hostId) return;
+        const soloRoute = routes.find((r) => r.personId === personId);
+        const passengerLeg = carpoolLegs?.find((l) => l.poolId === pool.id && l.passengerId === personId);
+        if (soloRoute && passengerLeg) {
+          totalSavedDistance += (soloRoute.distance - passengerLeg.distance);
+        }
+      });
+    });
+  }
+
   const displayPeople =
     sortByDistance && routes.length > 0
       ? [...people].sort((a, b) => {
@@ -117,6 +132,272 @@ export function DistancePanel({
           return distA - distB;
         })
       : people;
+
+  const poolIds = [
+    ...new Set(displayPeople.filter((person) => person.carpoolId).map((person) => person.carpoolId as string)),
+  ];
+  const poolMemberCounts = people.reduce<Record<string, number>>((counts, person) => {
+    if (!person.carpoolId) return counts;
+    counts[person.carpoolId] = (counts[person.carpoolId] ?? 0) + 1;
+    return counts;
+  }, {});
+  const groupedPoolIds = new Set(
+    Object.entries(poolMemberCounts)
+      .filter(([, count]) => count > 1)
+      .map(([poolId]) => poolId)
+  );
+
+  const getPoolIndex = (poolId: string) => poolIds.indexOf(poolId) + 1;
+  const getPoolColor = (poolId: string) => {
+    const activePool = activeCarpoolPools.find((pool) => pool.id === poolId);
+    const anchorId = activePool?.hostId ?? people.find((person) => person.carpoolId === poolId)?.id ?? poolId;
+    return getPersonColor(people, anchorId);
+  };
+
+  const renderPersonCard = (p: Person, index: number, inPoolCard = false) => {
+    const route = routes.find((r) => r.personId === p.id);
+    const activePool = p.carpoolId ? activeCarpoolPools.find((pool) => pool.id === p.carpoolId) : null;
+    const poolIndex = p.carpoolId ? getPoolIndex(p.carpoolId) : 0;
+    const rank = sortByDistance && route ? index + 1 : null;
+    const progressPercent =
+      maxDistance > 0 && route ? (route.distance / maxDistance) * 100 : 0;
+    const color = getPersonColor(people, p.id);
+    const poolColor = p.carpoolId ? getPoolColor(p.carpoolId) : color;
+
+    return (
+      <li
+        key={p.id}
+        draggable
+        onDragStart={(e) => {
+          setDraggedPersonId(p.id);
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', p.id);
+        }}
+        onDragEnd={() => setDraggedPersonId(null)}
+        onDragOver={(e) => {
+          if (draggedPersonId && draggedPersonId !== p.id) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+          }
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          const sourceId = e.dataTransfer.getData('text/plain') || draggedPersonId;
+          setDraggedPersonId(null);
+          if (sourceId && sourceId !== p.id) onMovePersonToCarpool(sourceId, p.id);
+        }}
+        style={{
+          position: 'relative',
+          padding: '10px 28px 10px 12px',
+          background: draggedPersonId && draggedPersonId !== p.id ? 'var(--surface)' : 'var(--bg)',
+          borderRadius: '8px',
+          marginBottom: inPoolCard ? '6px' : '8px',
+          border: `1px solid ${draggedPersonId && draggedPersonId !== p.id ? 'var(--accent)' : p.carpoolId ? poolColor : 'var(--border)'}`,
+          borderLeftWidth: '4px',
+          borderLeftColor: color,
+          boxShadow: p.carpoolId && !inPoolCard ? `0 0 0 2px ${poolColor}55, inset 0 0 0 1px ${poolColor}33` : undefined,
+          cursor: 'grab',
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => onRemovePerson(p.id)}
+          title="Remove"
+          style={{
+            position: 'absolute',
+            top: '6px',
+            right: '6px',
+            width: '20px',
+            height: '20px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '0.9rem',
+            lineHeight: 1,
+            color: 'var(--muted)',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: 0,
+          }}
+        >
+          x
+        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+          {rank != null && (
+            <span
+              style={{
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                color,
+                minWidth: '1.25rem',
+              }}
+            >
+              #{rank}
+            </span>
+          )}
+          <span
+            style={{
+              width: '10px',
+              height: '10px',
+              borderRadius: '50%',
+              background: color,
+              flexShrink: 0,
+            }}
+            aria-hidden
+          />
+          <input
+            type="text"
+            value={p.name}
+            onChange={(e) => onUpdateName(p.id, e.target.value)}
+            style={{
+              flex: 1,
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--text)',
+              fontSize: '0.95rem',
+              fontWeight: 600,
+              minWidth: 0,
+            }}
+          />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', margin: '6px 0' }}>
+          <button
+            type="button"
+            onClick={() => onToggleCarpool(p.id)}
+            title={p.carpoolId ? 'Remove from carpool' : 'Start a carpool'}
+            style={{
+              background: p.carpoolId ? 'var(--accent-dim)' : 'var(--surface)',
+              border: '1px solid ' + (p.carpoolId ? 'var(--accent)' : 'var(--border)'),
+              borderRadius: '12px',
+              padding: '3px 8px',
+              fontSize: '0.72rem',
+              fontWeight: 500,
+              color: p.carpoolId ? 'var(--accent)' : 'var(--muted)',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+              <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.85 7h10.29l1.04 3H5.81l1.04-3zM19 17H5v-5h14v5z"/>
+              <circle cx="7.5" cy="14.5" r="1.5"/>
+              <circle cx="16.5" cy="14.5" r="1.5"/>
+            </svg>
+            {p.carpoolId ? `Pool ${poolIndex || ''}`.trim() : 'Start Carpool'}
+          </button>
+          {p.carpoolId && !inPoolCard && (
+            <span
+              style={{
+                marginLeft: '8px',
+                fontSize: '0.72rem',
+                color: poolColor,
+                fontWeight: 700,
+              }}
+            >
+              Pool border · max {MAX_CARPOOL_SIZE}
+            </span>
+          )}
+        </div>
+        {route && (() => {
+          const isCarpool = Boolean(activePool);
+          const isHost = isCarpool && p.id === activePool?.hostId;
+          const isPassenger = isCarpool && p.id !== activePool?.hostId;
+          const passengerLeg = isPassenger ? carpoolLegs?.find((l) => l.poolId === activePool?.id && l.passengerId === p.id) : null;
+          const hostName = activePool
+            ? people.find((person) => person.id === activePool.hostId)?.name ?? 'driver'
+            : 'driver';
+
+          if (isPassenger && passengerLeg) {
+            const savedDist = route.distance - passengerLeg.distance;
+            const pickupText = passengerLeg.pickupMode === 'driver-picks-up'
+              ? `${hostName} picks up on the way`
+              : `Drives ${formatKm(passengerLeg.passengerDriveDistance)} to ${hostName}`;
+            const pickupDetail = passengerLeg.pickupMode === 'driver-picks-up'
+              ? passengerLeg.driverDetourDistance >= 0
+                ? `Driver detour ${formatKm(passengerLeg.driverDetourDistance)}`
+                : `Driver route reduced by ${formatKm(Math.abs(passengerLeg.driverDetourDistance))}`
+              : `Pickup leg ${formatKm(passengerLeg.pickupDistance)}`;
+            return (
+              <div style={{ marginTop: '6px' }}>
+                <div style={{ fontSize: '0.82rem', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ color: 'var(--accent)', fontWeight: 600, background: 'rgba(88, 166, 255, 0.1)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem' }}>Passenger</span>
+                  <span>{pickupText}</span>
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--muted)', marginTop: '2px' }}>
+                  {pickupDetail}
+                </div>
+                <div style={{ fontSize: '0.8rem', color: savedDist >= 0 ? 'var(--green)' : 'var(--orange)', marginTop: '2px', fontWeight: 500 }}>
+                  {savedDist >= 0 ? `Saved ${formatKm(savedDist)} of driving!` : `Drives ${formatKm(Math.abs(savedDist))} extra`}
+                </div>
+              </div>
+            );
+          }
+
+          if (isHost) {
+            return (
+              <>
+                <div
+                  style={{
+                    height: '6px',
+                    borderRadius: '3px',
+                    background: 'var(--border)',
+                    overflow: 'hidden',
+                    marginBottom: '6px',
+                    marginTop: '6px'
+                  }}
+                >
+                  <div
+                    style={{
+                      height: '100%',
+                      width: `${progressPercent}%`,
+                      borderRadius: '3px',
+                      background: color,
+                      minWidth: progressPercent > 0 ? '4px' : 0,
+                    }}
+                  />
+                </div>
+                <div style={{ fontSize: '0.85rem', color: 'var(--muted)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ color: 'var(--green)', fontWeight: 600, background: 'rgba(63, 185, 80, 0.1)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem' }}>Driver / Host</span>
+                  <span>{formatKm(route.distance)} · ~{formatDuration(route.duration)} drive</span>
+                </div>
+              </>
+            );
+          }
+
+          return (
+            <>
+              <div
+                style={{
+                  height: '6px',
+                  borderRadius: '3px',
+                  background: 'var(--border)',
+                  overflow: 'hidden',
+                  marginBottom: '6px',
+                  marginTop: '6px'
+                }}
+              >
+                <div
+                  style={{
+                    height: '100%',
+                    width: `${progressPercent}%`,
+                    borderRadius: '3px',
+                    background: color,
+                    minWidth: progressPercent > 0 ? '4px' : 0,
+                  }}
+                />
+              </div>
+              <div style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
+                {formatKm(route.distance)} · ~{formatDuration(route.duration)} drive
+              </div>
+            </>
+          );
+        })()}
+      </li>
+    );
+  };
 
   return (
     <aside
@@ -268,9 +549,38 @@ export function DistancePanel({
           </div>
         )}
       </div>
+      {hasCarpool && (
+        <div
+          className="carpool-opt-card"
+          style={{
+            background: 'linear-gradient(135deg, var(--surface) 0%, rgba(88, 166, 255, 0.08) 100%)',
+            border: '1px solid var(--accent)',
+            borderRadius: '8px',
+            padding: '12px',
+            marginBottom: '16px',
+            boxShadow: '0 4px 12px rgba(88, 166, 255, 0.1)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <span style={{ fontSize: '1.2rem' }} aria-hidden>🚗</span>
+            <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 600, color: 'var(--accent)' }}>
+              Carpool Optimization
+            </h3>
+          </div>
+          <p style={{ margin: '0 0 6px', fontSize: '0.85rem', color: 'var(--text)' }}>
+            Recommended drivers: <strong style={{ color: 'var(--accent)' }}>{hostNames.join(', ')}</strong>
+          </p>
+          <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
+            {activeCarpoolPools.length} active {activeCarpoolPools.length === 1 ? 'carpool' : 'carpools'} · Total driving saved:{' '}
+            <strong style={{ color: totalSavedDistance < 0 ? '#f85149' : 'var(--green)' }}>
+              {totalSavedDistance < 0 ? '-' : ''}{formatKm(Math.abs(totalSavedDistance))}
+            </strong>
+          </div>
+        </div>
+      )}
       {!meetingPoint && (
         <p style={{ color: 'var(--muted)', fontSize: '0.875rem', margin: 0 }}>
-          Set a meeting point on the map, then click &quot;Calculate distances&quot;.
+          Set a meeting point on the map to calculate distances automatically.
         </p>
       )}
       {people.length === 0 && (
@@ -280,116 +590,81 @@ export function DistancePanel({
       )}
       {people.length > 0 && (
         <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 16px' }}>
-          {displayPeople.map((p, index) => {
-            const route = routes.find((r) => r.personId === p.id);
-            const rank = sortByDistance && route ? index + 1 : null;
-            const progressPercent =
-              maxDistance > 0 && route ? (route.distance / maxDistance) * 100 : 0;
-            const color = getPersonColor(people, p.id);
-            return (
-              <li
-                key={p.id}
-                style={{
-                  position: 'relative',
-                  padding: '10px 28px 10px 12px',
-                  background: 'var(--bg)',
-                  borderRadius: '8px',
-                  marginBottom: '8px',
-                  border: '1px solid var(--border)',
-                  borderLeftWidth: '4px',
-                  borderLeftColor: color,
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => onRemovePerson(p.id)}
-                  title="Remove"
+          {(() => {
+            const renderedPoolIds = new Set<string>();
+
+            return displayPeople.map((p, index) => {
+              if (!p.carpoolId || !groupedPoolIds.has(p.carpoolId)) {
+                return renderPersonCard(p, index);
+              }
+
+              if (renderedPoolIds.has(p.carpoolId)) return null;
+              renderedPoolIds.add(p.carpoolId);
+
+              const poolPeople = displayPeople.filter((person) => person.carpoolId === p.carpoolId);
+              const poolIndex = getPoolIndex(p.carpoolId);
+              const poolColor = getPoolColor(p.carpoolId);
+              const host = activeCarpoolPools.find((pool) => pool.id === p.carpoolId);
+              const hostName = host
+                ? people.find((person) => person.id === host.hostId)?.name
+                : undefined;
+
+              return (
+                <li
+                  key={p.carpoolId}
                   style={{
-                    position: 'absolute',
-                    top: '6px',
-                    right: '6px',
-                    width: '20px',
-                    height: '20px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.9rem',
-                    lineHeight: 1,
-                    color: 'var(--muted)',
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    padding: 0,
+                    listStyle: 'none',
+                    padding: '12px',
+                    marginBottom: '12px',
+                    borderRadius: '8px',
+                    border: `1px solid ${poolColor}`,
+                    background: `linear-gradient(135deg, ${poolColor}24 0%, var(--bg) 78%)`,
+                    boxShadow: `0 0 0 2px ${poolColor}33`,
                   }}
                 >
-                  ✕
-                </button>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                  {rank != null && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '8px',
+                      marginBottom: '10px',
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 700, color: poolColor }}>
+                        Pool {poolIndex}
+                      </h3>
+                      {hostName && (
+                        <div style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: '2px' }}>
+                          Driver: {hostName}
+                        </div>
+                      )}
+                    </div>
                     <span
                       style={{
-                        fontSize: '0.75rem',
+                        flexShrink: 0,
+                        padding: '3px 8px',
+                        borderRadius: '999px',
+                        border: `1px solid ${poolColor}`,
+                        color: poolColor,
+                        background: 'var(--surface)',
+                        fontSize: '0.72rem',
                         fontWeight: 700,
-                        color,
-                        minWidth: '1.25rem',
                       }}
                     >
-                      #{rank}
+                      {poolPeople.length} {poolPeople.length === 1 ? 'user' : 'users'}
                     </span>
-                  )}
-                  <span
-                    style={{
-                      width: '10px',
-                      height: '10px',
-                      borderRadius: '50%',
-                      background: color,
-                      flexShrink: 0,
-                    }}
-                    aria-hidden
-                  />
-                  <input
-                    type="text"
-                    value={p.name}
-                    onChange={(e) => onUpdateName(p.id, e.target.value)}
-                    style={{
-                      flex: 1,
-                      background: 'transparent',
-                      border: 'none',
-                      color: 'var(--text)',
-                      fontSize: '0.95rem',
-                      fontWeight: 600,
-                    }}
-                  />
-                </div>
-                {route && (
-                  <>
-                    <div
-                      style={{
-                        height: '6px',
-                        borderRadius: '3px',
-                        background: 'var(--border)',
-                        overflow: 'hidden',
-                        marginBottom: '6px',
-                      }}
-                    >
-                      <div
-                        style={{
-                          height: '100%',
-                          width: `${progressPercent}%`,
-                          borderRadius: '3px',
-                          background: color,
-                          minWidth: progressPercent > 0 ? '4px' : 0,
-                        }}
-                      />
-                    </div>
-                    <div style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
-                      {formatKm(route.distance)} · ~{formatDuration(route.duration)} drive
-                    </div>
-                  </>
-                )}
-              </li>
-            );
-          })}
+                  </div>
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                    {poolPeople.map((poolPerson) =>
+                      renderPersonCard(poolPerson, displayPeople.indexOf(poolPerson), true)
+                    )}
+                  </ul>
+                </li>
+              );
+            });
+          })()}
         </ul>
       )}
     </aside>
