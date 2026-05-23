@@ -6,7 +6,6 @@ import type { CarpoolLeg, CarpoolPool, LatLng, RouteEntry } from './types';
 import type { StoredFavourite } from './sessionStorage';
 
 const MAX_FAVOURITES = 9;
-const MAX_CARPOOL_SIZE = 4;
 
 export function DistancePanel({
   people,
@@ -288,18 +287,6 @@ export function DistancePanel({
             </svg>
             {p.carpoolId ? `Pool ${poolIndex || ''}`.trim() : 'Start Carpool'}
           </button>
-          {p.carpoolId && !inPoolCard && (
-            <span
-              style={{
-                marginLeft: '8px',
-                fontSize: '0.72rem',
-                color: poolColor,
-                fontWeight: 700,
-              }}
-            >
-              Pool border · max {MAX_CARPOOL_SIZE}
-            </span>
-          )}
         </div>
         {route && (() => {
           const isCarpool = Boolean(activePool);
@@ -653,7 +640,7 @@ export function DistancePanel({
                         fontWeight: 700,
                       }}
                     >
-                      {poolPeople.length} {poolPeople.length === 1 ? 'user' : 'users'}
+                      {poolPeople.length} {poolPeople.length === 1 ? 'member' : 'members'}
                     </span>
                   </div>
                   <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
