@@ -343,11 +343,13 @@ export default function App() {
   const [carpoolPools, setCarpoolPools] = useState<CarpoolPool[]>([]);
   const [carpoolLegs, setCarpoolLegs] = useState<CarpoolLeg[]>([]);
   const [carpoolPassengerGeometries, setCarpoolPassengerGeometries] = useState<Record<string, RouteGeometry>>({});
+  const [carpoolDriverGeometries, setCarpoolDriverGeometries] = useState<Record<string, RouteGeometry>>({});
 
   const clearCarpoolState = useCallback(() => {
     setCarpoolPools([]);
     setCarpoolLegs([]);
     setCarpoolPassengerGeometries({});
+    setCarpoolDriverGeometries({});
   }, []);
 
   const clearCalculatedRoutes = useCallback(() => {
@@ -646,6 +648,7 @@ export default function App() {
         const pools: CarpoolPool[] = [];
         const legs: CarpoolLeg[] = [];
         const passengerGeometries: Record<string, RouteGeometry> = {};
+        const driverGeometries: Record<string, RouteGeometry> = {};
 
         for (const [poolId, carpoolers] of activeCarpoolGroups) {
           const carpoolCoordsKey = carpoolers
@@ -689,6 +692,7 @@ export default function App() {
           
           const bestHost = carpoolers[bestHostIndex];
           pools.push({ id: poolId, hostId: bestHost.id, memberIds: carpoolers.map((p) => p.id) });
+          const driverPickupIndexes: number[] = [];
           
           // Construct driving legs for passengers
           for (let c = 0; c < carpoolers.length; c++) {
@@ -706,6 +710,7 @@ export default function App() {
             const driverPicksUp = driverPickupExtra < passengerToHost;
             const legDistance = driverPicksUp ? driverPickupExtra : passengerToHost;
             const legDuration = driverPicksUp ? hostToPassengerDuration : passengerToHostDuration;
+            if (driverPicksUp) driverPickupIndexes.push(c);
             
             legs.push({
               poolId,
@@ -719,27 +724,87 @@ export default function App() {
               pickupDistance: driverPicksUp ? hostToPassenger : passengerToHost,
             });
             
-            // Fetch passenger-to-host route geometry
-            const segmentKey = driverPicksUp
-              ? `${bestHost.position[1]},${bestHost.position[0]};${passenger.position[1]},${passenger.position[0]}`
-              : `${passenger.position[1]},${passenger.position[0]};${bestHost.position[1]},${bestHost.position[0]}`;
-            const segCached = segmentCache.current.get(segmentKey);
-            if (segCached) {
-              passengerGeometries[passenger.id] = segCached;
+            // Fetch passenger-to-host route geometry for passengers who meet the driver.
+            if (!driverPicksUp) {
+              const segmentKey = `${passenger.position[1]},${passenger.position[0]};${bestHost.position[1]},${bestHost.position[0]}`;
+              const segCached = segmentCache.current.get(segmentKey);
+              if (segCached) {
+                passengerGeometries[passenger.id] = segCached;
+              } else {
+                const r = await fetch(`/api/route?coords=${encodeURIComponent(segmentKey)}`);
+                if (r.ok) {
+                  const routeData = await r.json();
+                  const coords = routeData.routes?.[0]?.geometry?.coordinates;
+                  const geom = coords ? (coords.map((c: number[]) => [c[1], c[0]]) as RouteGeometry) : [];
+                  passengerGeometries[passenger.id] = geom;
+                  if (segmentCache.current.size >= MAX_SEGMENT_CACHE) {
+                    const firstKey = segmentCache.current.keys().next().value;
+                    if (firstKey !== undefined) segmentCache.current.delete(firstKey);
+                  }
+                  segmentCache.current.set(segmentKey, geom);
+                } else {
+                  passengerGeometries[passenger.id] = [];
+                }
+              }
+            }
+          }
+
+          if (driverPickupIndexes.length > 0 && meetingPoint) {
+            const routeDistanceForOrder = (order: number[]) => {
+              let total = 0;
+              let previousIndex = bestHostIndex;
+              for (const pickupIndex of order) {
+                total += carpoolDistances[previousIndex][pickupIndex] / 1000;
+                previousIndex = pickupIndex;
+              }
+              const lastPassengerRoute = currentRoutes.find((r) => r.personId === carpoolers[previousIndex].id);
+              total += lastPassengerRoute ? lastPassengerRoute.distance : 0;
+              return total;
+            };
+
+            let bestPickupOrder = driverPickupIndexes;
+            let bestPickupDistance = routeDistanceForOrder(driverPickupIndexes);
+            const permutePickupOrder = (remaining: number[], order: number[]) => {
+              if (remaining.length === 0) {
+                const distance = routeDistanceForOrder(order);
+                if (distance < bestPickupDistance) {
+                  bestPickupDistance = distance;
+                  bestPickupOrder = order;
+                }
+                return;
+              }
+              remaining.forEach((pickupIndex, index) => {
+                permutePickupOrder(
+                  remaining.filter((_, remainingIndex) => remainingIndex !== index),
+                  [...order, pickupIndex]
+                );
+              });
+            };
+            permutePickupOrder(driverPickupIndexes, []);
+
+            const driverRoutePoints = [
+              bestHost.position,
+              ...bestPickupOrder.map((pickupIndex) => carpoolers[pickupIndex].position),
+              meetingPoint,
+            ];
+            const driverRouteKey = driverRoutePoints
+              .map(([lat, lng]) => `${lng},${lat}`)
+              .join(';');
+            const cachedDriverRoute = segmentCache.current.get(driverRouteKey);
+            if (cachedDriverRoute) {
+              driverGeometries[poolId] = cachedDriverRoute;
             } else {
-              const r = await fetch(`/api/route?coords=${encodeURIComponent(segmentKey)}`);
+              const r = await fetch(`/api/route?coords=${encodeURIComponent(driverRouteKey)}`);
               if (r.ok) {
                 const routeData = await r.json();
                 const coords = routeData.routes?.[0]?.geometry?.coordinates;
                 const geom = coords ? (coords.map((c: number[]) => [c[1], c[0]]) as RouteGeometry) : [];
-                passengerGeometries[passenger.id] = geom;
+                driverGeometries[poolId] = geom;
                 if (segmentCache.current.size >= MAX_SEGMENT_CACHE) {
                   const firstKey = segmentCache.current.keys().next().value;
                   if (firstKey !== undefined) segmentCache.current.delete(firstKey);
                 }
-                segmentCache.current.set(segmentKey, geom);
-              } else {
-                passengerGeometries[passenger.id] = [];
+                segmentCache.current.set(driverRouteKey, geom);
               }
             }
           }
@@ -752,6 +817,7 @@ export default function App() {
         setCarpoolPools(pools);
         setCarpoolLegs(legs);
         setCarpoolPassengerGeometries(passengerGeometries);
+        setCarpoolDriverGeometries(driverGeometries);
       } else {
         clearCarpoolState();
       }
@@ -1108,16 +1174,20 @@ export default function App() {
                 const pool = carpoolPools.find((carpoolPool) => carpoolPool.id === person.carpoolId);
                 if (pool) {
                   if (person.id === pool.hostId) {
+                    const driverGeom = carpoolDriverGeometries[pool.id];
+                    const displayGeom = driverGeom && driverGeom.length > 1 ? driverGeom : geom;
                     return (
                       <Polyline
                         key={person.id}
-                        positions={geom}
+                        positions={displayGeom}
                         color={getPersonColor(people, person.id)}
                         weight={6}
                         opacity={0.9}
                       />
                     );
                   }
+                  const passengerLeg = carpoolLegs.find((leg) => leg.poolId === pool.id && leg.passengerId === person.id);
+                  if (passengerLeg?.pickupMode === 'driver-picks-up') return null;
                   const passengerGeom = carpoolPassengerGeometries[person.id];
                   if (passengerGeom && passengerGeom.length > 1) {
                     return (
