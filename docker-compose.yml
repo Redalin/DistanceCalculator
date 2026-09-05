@@ -9,6 +9,7 @@ services:
       # OSRM_URL=https://router.project-osrm.org
       # Optional: use your own OSRM instance
       - OSRM_URL=http://osrm:5000
+      - CARTO_API_KEY=${CARTO_API_KEY:?Set CARTO_API_KEY before starting Docker Compose}
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:3050', res => { process.exit(res.statusCode === 200 ? 0 : 1); }).on('error', () => process.exit(1));\""]
       interval: 30s
