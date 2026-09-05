@@ -56,7 +56,15 @@ function restorePerson(p: Person): Person {
   };
 }
 
-const CARTO_API_KEY = window.__APP_CONFIG__?.cartoApiKey || import.meta.env.VITE_CARTO_API_KEY || '';
+const runtimeCartoApiKey = window.__APP_CONFIG__?.cartoApiKey || '';
+const buildTimeCartoApiKey = import.meta.env.VITE_CARTO_API_KEY || '';
+const CARTO_API_KEY = runtimeCartoApiKey || buildTimeCartoApiKey;
+
+console.info('[Carto tiles] API key configuration', {
+  configured: Boolean(CARTO_API_KEY),
+  source: runtimeCartoApiKey ? 'runtime /config.js' : buildTimeCartoApiKey ? 'VITE_CARTO_API_KEY' : 'none',
+  length: CARTO_API_KEY.length,
+});
 
 const TILE_URLS: Record<Theme, string> = {
   dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
@@ -65,6 +73,10 @@ const TILE_URLS: Record<Theme, string> = {
 
 function getTileUrl(theme: Theme) {
   const url = TILE_URLS[theme];
+  console.info('[Carto tiles] URL configuration', {
+    theme,
+    usesApiKey: Boolean(CARTO_API_KEY),
+  });
   return CARTO_API_KEY ? `${url}?key=${encodeURIComponent(CARTO_API_KEY)}` : url;
 }
 
