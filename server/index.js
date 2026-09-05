@@ -129,6 +129,14 @@ app.get('/health', async (_, res) => {
   res.json({ ok: true, osrm });
 });
 
+// Expose browser-safe runtime configuration without baking deployment values into the image.
+app.get('/config.js', (_, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.type('application/javascript').send(
+    `window.__APP_CONFIG__ = ${JSON.stringify({ cartoApiKey: process.env.CARTO_API_KEY || '' })};`
+  );
+});
+
 // API: get driving distance/duration matrix from OSRM
 // GET /api/table?coords=lon1,lat1;lon2,lat2;lon3,lat3
 // coords: person1, person2, ..., meetingPoint (last coord is destination)

@@ -56,10 +56,17 @@ function restorePerson(p: Person): Person {
   };
 }
 
+const CARTO_API_KEY = window.__APP_CONFIG__?.cartoApiKey || import.meta.env.VITE_CARTO_API_KEY || '';
+
 const TILE_URLS: Record<Theme, string> = {
   dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
   light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
 };
+
+function getTileUrl(theme: Theme) {
+  const url = TILE_URLS[theme];
+  return CARTO_API_KEY ? `${url}?key=${encodeURIComponent(CARTO_API_KEY)}` : url;
+}
 
 function MapControls({
   theme,
@@ -921,7 +928,7 @@ export default function App() {
   }, [saveActiveProfile]);
 
   const hasMeeting = meetingPoint !== null;
-  const tileUrl = TILE_URLS[theme];
+  const tileUrl = getTileUrl(theme);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -1070,7 +1077,7 @@ export default function App() {
             zoomControl={false}
           >
             <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; <a href="https://carto.com/attributions">CARTO</a>'
               url={tileUrl}
             />
             <ZoomControl position="bottomright" />

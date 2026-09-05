@@ -65,6 +65,14 @@ Optional environment variables:
 
 - `PORT` – port to listen on (default `3000`)
 - `OSRM_URL` – custom OSRM server (default: public `https://router.project-osrm.org`)
+- `CARTO_API_KEY` – CARTO basemap API key, appended to the Leaflet tile URL
+
+For Docker Compose, set the key in the shell before starting the app:
+
+```bash
+export CARTO_API_KEY=your-carto-key
+docker compose up --build
+```
 
 ## Troubleshooting 502 errors
 
