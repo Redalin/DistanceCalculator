@@ -49,9 +49,16 @@ jobs:
           WEBHOOK_URL: ${{ secrets.DOCKHAND_WEBHOOK_URL }}
           WEBHOOK_SECRET: ${{ secrets.DOCKHAND_WEBHOOK_SECRET }}
         run: |
+          set -euo pipefail
           PAYLOAD='{}'
           SIGNATURE="sha256=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | awk '{print $NF}')"
-          curl -sf -X POST "$WEBHOOK_URL" \
+          RESPONSE=$(curl --silent --show-error --fail-with-body -X POST "$WEBHOOK_URL" \
             -H "Content-Type: application/json" \
             -H "X-Hub-Signature-256: $SIGNATURE" \
-            -d "$PAYLOAD"          
+            -d "$PAYLOAD")
+
+          echo "Dockhand response: $RESPONSE"
+          if ! jq -e '.success == true' >/dev/null <<< "$RESPONSE"; then
+            echo "Dockhand redeploy failed: $(jq -r '.error // .message // "invalid response"' <<< "$RESPONSE" 2>/dev/null || echo "invalid response")" >&2
+            exit 1
+          fi
