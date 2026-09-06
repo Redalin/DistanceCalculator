@@ -77,7 +77,7 @@ function getTileUrl(theme: Theme) {
     theme,
     usesApiKey: Boolean(CARTO_API_KEY),
   });
-  return CARTO_API_KEY ? `${url}?key=${encodeURIComponent(CARTO_API_KEY)}` : url;
+  return CARTO_API_KEY ? `${url}?api_key=${encodeURIComponent(CARTO_API_KEY)}` : url;
 }
 
 function MapControls({
