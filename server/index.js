@@ -132,7 +132,7 @@ app.get('/health', async (_, res) => {
 // Expose browser-safe runtime configuration without baking deployment values into the image.
 app.get('/config.js', (_, res) => {
   res.set('Cache-Control', 'no-store');
-  const hasCartoApiKey = Boolean(process.env.CARTO_API_KEY);
+  
   res.type('application/javascript').send(
     `window.__APP_CONFIG__ = ${JSON.stringify({ cartoApiKey: process.env.CARTO_API_KEY || '' })};`
   );

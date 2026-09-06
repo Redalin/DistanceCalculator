@@ -68,15 +68,7 @@ const TILE_URLS: Record<Theme, string> = {
 
 function getTileUrl(theme: Theme) {
   const url = TILE_URLS[theme];
-<<<<<<< Updated upstream
-  console.info('[Carto tiles] URL configuration', {
-    theme,
-    usesApiKey: Boolean(CARTO_API_KEY),
-  });
-  return CARTO_API_KEY ? `${url}?api_key=${encodeURIComponent(CARTO_API_KEY)}` : url;
-=======
   return CARTO_API_KEY ? `${url}?key=${encodeURIComponent(CARTO_API_KEY)}` : url;
->>>>>>> Stashed changes
 }
 
 function MapControls({
